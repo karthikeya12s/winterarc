@@ -1,8 +1,8 @@
 /* Offline support: cache the app shell, serve it cache-first, refresh in the background. */
-const CACHE = 'winterarc-v1';
+const CACHE = 'winterarc-v2';
 const ASSETS = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest', 'icons/icon.svg',
-  'js/store.js', 'js/charts.js', 'js/health-import.js', 'js/insights.js', 'js/reminders.js', 'js/demo.js', 'js/app.js',
+  'js/store.js', 'js/icons.js', 'js/charts.js', 'js/health-import.js', 'js/insights.js', 'js/reminders.js', 'js/demo.js', 'js/app.js',
 ];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

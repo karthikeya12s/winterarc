@@ -93,7 +93,7 @@
     try {
       root.localStorage && root.localStorage.setItem(KEY, JSON.stringify(state));
     } catch (e) {
-      alert('Could not save — storage may be full. Export a backup from Settings.');
+      (root.WA.ui ? root.WA.ui.tell : alert)('Could not save. Storage may be full; export a backup from Settings.');
     }
     listeners.forEach((fn) => fn(state));
   }
