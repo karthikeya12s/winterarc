@@ -1,5 +1,5 @@
 /* Offline support: cache the app shell, serve it cache-first, refresh in the background. */
-const CACHE = 'winterarc-v3';
+const CACHE = 'winterarc-v4';
 const ASSETS = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest', 'icons/icon.svg',
   'js/store.js', 'js/icons.js', 'js/charts.js', 'js/strength.js', 'js/health-import.js', 'js/insights.js', 'js/reminders.js', 'js/demo.js', 'js/app.js',

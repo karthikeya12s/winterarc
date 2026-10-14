@@ -90,6 +90,39 @@
   const tell = (message) => ask(message, { cancel: null });
   WA.ui = { ask, tell, toast };
 
+  // ---------------- page layout: desktop dashboard columns, phone sub-tabs ----------------
+  const tabState = {};
+  function mountTabs(name) {
+    $$('.subtabs', view).forEach((e) => e.remove());
+    const items = $$('.page-body [data-tab]', view).filter((el) => el.dataset.tab !== '*');
+    const labels = [...new Set(items.map((el) => el.dataset.tab))];
+    if (labels.length < 2) return;
+    let active = tabState[name];
+    if (!labels.includes(active)) active = labels[0];
+    const seg = document.createElement('div');
+    seg.className = 'seg subtabs';
+    seg.setAttribute('role', 'tablist');
+    seg.innerHTML = labels.map((l) => `<button type="button" role="tab" data-subtab="${esc(l)}">${esc(l)}</button>`).join('');
+    const apply = () => {
+      items.forEach((el) => el.classList.toggle('tab-off', el.dataset.tab !== active));
+      $$('button', seg).forEach((b) => b.setAttribute('aria-selected', b.dataset.subtab === active));
+    };
+    seg.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-subtab]');
+      if (!b) return;
+      e.stopPropagation();
+      active = tabState[name] = b.dataset.subtab;
+      apply();
+    });
+    $('.page-head', view).insertAdjacentElement('afterend', seg);
+    apply();
+  }
+  const saveScroll = () => $$('.grow', view).map((e) => e.scrollTop);
+  function finishRender(name, saved) {
+    mountTabs(name);
+    if (saved) $$('.grow', view).forEach((e, i) => (e.scrollTop = saved[i] || 0));
+  }
+
   // ---------------- router ----------------
   const routes = { today: renderToday, workouts: renderWorkouts, progress: renderProgress, review: renderReview, insights: renderInsights, health: renderHealth, settings: renderSettings };
   let current = location.hash || '#/today';
@@ -170,6 +203,7 @@
 
   // ---------------- TODAY ----------------
   function renderToday(arg) {
+    const saved = saveScroll();
     const s = store.get();
     const t = D.today();
     const day = arg && /^\d{4}-\d\d-\d\d$/.test(arg) ? arg : t;
@@ -200,6 +234,8 @@
       </div>
     </header>
 
+    <div class="page-body layout-today">
+    <div class="col" data-tab="Check-in">
     <section class="hero">
       <div class="hero-top">
         <div class="hero-title">
@@ -239,7 +275,7 @@
     }
     ${prsToday.length ? `<div class="plan-banner pr-banner">${WA.icon('spark')}<span><b>PR!</b> ${prsToday.map((p) => `${esc(p.name)} ${p.weight} kg × ${p.reps}`).join(', ')}</span></div>` : ''}
 
-    <section class="card">
+    <section class="card grow">
       <div class="card-head"><h2>Check-in</h2><a href="#/settings" class="link">Edit habits</a></div>
       <div class="pills">
         ${checks
@@ -274,16 +310,19 @@
       }
       ${focus ? `<p class="muted small focus-note">This week's focus: ${focus.icon} ${esc(focus.name)}</p>` : ''}
     </section>
+    </div>
 
-    <section class="card">
+    <div class="col" data-tab="Log">
+    <section class="card grow">
       <div class="card-head"><h2>Workouts</h2><button class="btn small ghost" data-add-workout>Full log…</button></div>
       ${ws.length ? `<ul class="list">${ws.map((w) => workoutRow(w, strength.prsOn(s, w.date))).join('')}</ul>` : ''}
       <div class="chips">${WORKOUT_TYPES.slice(0, 8).map((ty) => `<button class="chip" data-quick="${ty}">${ty}<small>${s.settings.lastDuration[ty] || DEFAULT_MIN[ty]}m</small></button>`).join('')}</div>
       <p class="muted small">One tap logs it with your usual duration. Use Edit to add lifts, distance or notes.</p>
     </section>
-
     ${ins.length ? `<section class="stack">${ins.map(insightCard).join('')}</section>` : ''}
+    </div>
 
+    <div class="col" data-tab="Body">
     <section class="card">
       <div class="card-head"><h2>Body & food</h2><a href="#/health" class="link">Sync</a></div>
       <div class="metric-grid">
@@ -293,10 +332,13 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card grow notes-card">
       <h2>Notes</h2>
-      <textarea id="note" rows="2" placeholder="How did today feel? Wins, struggles, energy…">${esc(entry.note || '')}</textarea>
-    </section>`;
+      <textarea id="note" rows="3" placeholder="How did today feel? Wins, struggles, energy…">${esc(entry.note || '')}</textarea>
+    </section>
+    </div>
+    </div>`;
+    finishRender('today', saved);
 
     view.onclick = (e) => {
       const tg = e.target.closest('[data-toggle]');
@@ -430,6 +472,7 @@
 
   // ---------------- WORKOUTS ----------------
   function renderWorkouts() {
+    const saved = saveScroll();
     const s = store.get();
     const t = D.today();
     const filter = renderWorkouts.filter || '';
@@ -445,17 +488,20 @@
 
     view.innerHTML = `
     <header class="page-head"><h1>Workouts</h1><button class="btn" data-add-workout>+ Log workout</button></header>
-    <section class="tiles">
+    <div class="page-body layout-2">
+    <section class="tiles full" data-tab="*">
       <div class="tile"><span class="stat-num">${wk.length}</span><span class="stat-label">sessions this week</span></div>
       <div class="tile"><span class="stat-num">${sum(wk)}</span><span class="stat-label">minutes this week</span></div>
       <div class="tile"><span class="stat-num">${tonnage >= 1000 ? (tonnage / 1000).toFixed(1) + ' t' : tonnage}</span><span class="stat-label">lifted this week</span></div>
       <div class="tile"><span class="stat-num">${ch.length}</span><span class="stat-label">sessions this challenge</span></div>
     </section>
 
+    <div class="col" data-tab="Lifts">
     ${
       lifts.length
-        ? `<section class="card">
+        ? `<section class="card grow">
       <div class="card-head"><h2>Lifts</h2><span class="muted small">est. 1RM = weight × (1 + reps/30)</span></div>
+      <p class="muted small swipe-hint">Swipe for more lifts →</p>
       <ul class="lifts">
         ${lifts
           .map((x) => {
@@ -475,8 +521,10 @@
     </section>`
         : `<section class="card notice"><p><strong>Track your lifts.</strong> Tap Edit on a strength workout and add exercises with sets × reps × kg. You'll get a per-lift history, estimated 1RM trend and PR alerts.</p></section>`
     }
+    </div>
 
-    <section class="card">
+    <div class="col" data-tab="History">
+    <section class="card grow">
       <div class="card-head"><h2>History</h2>
         <select id="wfilter" aria-label="Filter by type"><option value="">All types</option>${types.map((ty) => `<option ${ty === filter ? 'selected' : ''}>${esc(ty)}</option>`).join('')}</select></div>
       ${
@@ -489,7 +537,10 @@
               .join('')
           : '<p class="muted">No workouts yet. Log one, or import them from Apple Health on the Health tab.</p>'
       }
-    </section>`;
+    </section>
+    </div>
+    </div>`;
+    finishRender('workouts', saved);
     view.onclick = (e) => {
       if (e.target.closest('[data-add-workout]')) return openWorkoutDialog();
       handleWorkoutRowClick(e, renderWorkouts);
@@ -504,6 +555,7 @@
 
   // ---------------- PROGRESS ----------------
   function renderProgress() {
+    const saved = saveScroll();
     const s = store.get();
     const t = D.today();
     const goals = s.settings.goals || {};
@@ -557,6 +609,8 @@
       <div class="seg" role="tablist">
         ${[['week', 'Week'], ['30', '30 days'], ['challenge', 'Challenge']].map(([k, l]) => `<button role="tab" aria-selected="${mode === k}" data-mode="${k}">${l}</button>`).join('')}
       </div></header>
+    <div class="page-body layout-progress">
+    <div class="full" data-tab="*">
     <div class="range-nav">
       ${mode === 'week' ? `<button class="icon-btn" data-shift="-1" aria-label="Previous week">‹</button>` : ''}
       <span>${esc(label)}</span>
@@ -569,15 +623,20 @@
       <div class="tile"><span class="stat-num">${ws.length}</span><span class="stat-label">workouts · ${mins} min</span></div>
       <div class="tile"><span class="stat-num">${current} / ${best}</span><span class="stat-label">streak now / best</span></div>
     </section>
+    </div>
 
-    <section class="card">
+    <div class="col" data-tab="Overview">
+    <section class="card grow">
       <div class="card-head"><h2>Challenge calendar</h2>
       <span class="legend"><span class="hm-key hm-0"></span>0<span class="hm-key hm-1"></span><span class="hm-key hm-2"></span><span class="hm-key hm-3"></span><span class="hm-key hm-4"></span>100%</span></div>
       <div class="scroll-x">${charts.heatmap(heatDays)}</div>
       <p class="muted small">A day counts toward your streak when ≥${Math.round(calc.STREAK_THRESHOLD * 100)}% of habits are done. Tap a day to open it.</p>
     </section>
 
-    <section class="card">
+    </div>
+
+    <div class="col" data-tab="Habits">
+    <section class="card grow">
       <h2>Habit completion</h2>
       <ul class="habit-bars">
         ${s.habits
@@ -588,7 +647,10 @@
           .join('')}
       </ul>
     </section>
+    </div>
 
+    <div class="col" data-tab="Charts">
+    <section class="card grow">
     <div class="chart-grid">
       <section class="card"><h2>Workout minutes${mode === 'challenge' ? ' per week' : ''}</h2>${charts.bar(workoutPts, { label: 'Workout minutes', empty: 'No workouts in this range' })}</section>
       <section class="card"><h2>Weight</h2>${charts.line(metricPts('weight', 'kg'), { goal: goals.goalWeight, label: 'Weight', empty: 'Log weight on Today or sync it' })}</section>
@@ -598,7 +660,11 @@
       <section class="card"><h2>Calories eaten</h2>${charts.bar(metricPts('calories', 'kcal'), { goal: goals.calories, label: 'Calories', empty: 'Log calories on Today (set a goal in Settings)' })}</section>
       <section class="card"><h2>Resting heart rate</h2>${charts.line(metricPts('restingHR', 'bpm'), { label: 'Resting heart rate', empty: 'No heart-rate data yet' })}</section>
       <section class="card"><h2>Active energy</h2>${charts.bar(metricPts('activeEnergy', 'kcal'), { label: 'Active energy', empty: 'No active-energy data yet' })}</section>
+    </div>
+    </section>
+    </div>
     </div>`;
+    finishRender('progress', saved);
 
     view.onclick = (e) => {
       const m = e.target.closest('[data-mode]');
@@ -643,6 +709,7 @@
 
   // ---------------- WEEKLY REVIEW ----------------
   function renderReview(arg) {
+    const saved = saveScroll();
     const s = store.get();
     const t = D.today();
     const dow = (D.parse(t).getDay() + 6) % 7; // 0 = Mon
@@ -680,6 +747,8 @@
         <a class="icon-btn ${next > t ? 'disabled' : ''}" href="#/review/${next}" aria-label="Next week">›</a>
       </div></header>
 
+    <div class="page-body layout-3">
+    <div class="col" data-tab="Week">
     ${review.done ? `<div class="plan-banner done-banner">${WA.icon('check')}<span>Reviewed ${review.doneAt ? D.fmt(review.doneAt) : ''}. You can still edit it.</span></div>` : ''}
 
     <section class="tiles">
@@ -689,7 +758,7 @@
       <div class="tile"><span class="stat-num">${wDelta == null ? '—' : (wDelta > 0 ? '+' : '') + wDelta.toFixed(1) + '<small>kg</small>'}</span><span class="stat-label">weight change</span></div>
     </section>
 
-    <section class="card">
+    <section class="card grow">
       <h2>How the week went</h2>
       <ul class="review-habits">
         ${habitRows.map(({ h, hit, prev }) => `<li><span>${h.icon} ${esc(h.name)}</span><span class="hbar"><span style="width:${days.length ? (hit / days.length) * 100 : 0}%"></span></span><span class="num">${hit}/${days.length}</span>${delta(hit, prevDays.length ? prev : null)}</li>`).join('')}
@@ -703,14 +772,18 @@
         ${prs.length ? `<span>PRs: <b>${prs.map((p) => esc(p.name)).join(', ')}</b></span>` : ''}
       </div>
     </section>
+    </div>
 
-    <section class="card">
+    <div class="col" data-tab="Reflect">
+    <section class="card grow">
       <h2>Reflect</h2>
       <label>What worked<textarea id="rv-worked" rows="2" placeholder="e.g. Training straight after work. Prepping lunches on Sunday.">${esc(review.worked || '')}</textarea></label>
       <label>What to change<textarea id="rv-change" rows="2" placeholder="e.g. Phone out of the bedroom. Walk at lunch instead of after dinner.">${esc(review.change || '')}</textarea></label>
     </section>
+    </div>
 
-    <section class="card">
+    <div class="col" data-tab="Plan">
+    <section class="card grow">
       <div class="card-head"><h2>Plan week of ${D.fmt(next)}</h2></div>
       <label class="row-field"><span>One habit to focus on</span>
         <select id="pl-focus"><option value="">— pick one —</option>${s.habits.map((h) => `<option value="${h.id}" ${plan.focus === h.id ? 'selected' : ''}>${h.icon} ${esc(h.name)}</option>`).join('')}</select></label>
@@ -723,7 +796,10 @@
         <button class="btn" id="rv-done">${review.done ? 'Update review' : 'Finish review'}</button>
         <button class="btn ghost" id="rv-share">${WA.icon('share')} Share week</button>
       </div>
-    </section>`;
+    </section>
+    </div>
+    </div>`;
+    finishRender('review', saved);
 
     const savePlan = () => {
       store.update((st) => {
@@ -762,9 +838,13 @@
     const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
     view.innerHTML = `
     <header class="page-head"><h1>Insights</h1></header>
-    <section class="stack">${list.length ? list.map(insightCard).join('') : '<p class="muted">Log a few days and insights will appear here.</p>'}</section>
+    <div class="page-body layout-insights">
+    <div class="col" data-tab="Insights">
+    <section class="card grow"><div class="card-head"><h2>${list.length} insight${list.length === 1 ? '' : 's'}</h2><span class="muted small swipe-hint">Swipe →</span></div><div class="insight-grid">${list.length ? list.map(insightCard).join('') : '<p class="muted">Log a few days and insights will appear here.</p>'}</div></section>
+    </div>
 
-    <section class="card">
+    <div class="col" data-tab="Reminders">
+    <section class="card grow">
       <h2>Reminders</h2>
       <label class="row-field"><span>Daily check-in time</span><input type="time" id="rtime" value="${s.settings.reminderTime}"></label>
       <div class="option">
@@ -782,7 +862,10 @@
             : `<label class="switch"><input type="checkbox" id="notify" ${s.settings.notify && perm === 'granted' ? 'checked' : ''}><span></span></label>`
         }
       </div>
-    </section>`;
+    </section>
+    </div>
+    </div>`;
+    finishRender('insights');
 
     view.onclick = (e) => {
       if (e.target.id === 'ics') download('winter-arc-reminders.ics', reminders.icsFile(store.get()), 'text/calendar');
@@ -823,12 +906,14 @@
 
     view.innerHTML = `
     <header class="page-head"><h1>Health data</h1></header>
+    <div class="page-body layout-4">
+    <div class="col" data-tab="Sync">
     <section class="card notice">
       <p><strong>Why not automatic?</strong> Apple Health and Google Health Connect only share data with native apps on the phone, so a web app can't read them directly. Everything below is processed on this device; nothing is uploaded.</p>
       ${meta.lastImport ? `<p class="muted small">Last sync: ${new Date(meta.lastImport).toLocaleString()} · ${esc(meta.source)} · ${meta.records.toLocaleString()} records</p>` : ''}
     </section>
 
-    <section class="card">
+    <section class="card grow">
       <h2>One-tap sync from iPhone (Shortcut)</h2>
       <p class="small">Build a Shortcut once; after that, one tap (or a daily automation) sends the last 7 days of Health data into this app. It opens this URL with the data attached:</p>
       <code class="url">${esc(base)}?sync=…</code>
@@ -847,8 +932,10 @@
       <label>Or paste sync text here<textarea id="synctext" rows="2" placeholder="steps=2026-10-13:12034,2026-10-12:8800;sleep=2026-10-13:7.4;rhr=2026-10-13:57"></textarea></label>
       <button class="btn small" id="syncbtn">Import text</button>
     </section>
+    </div>
 
-    <section class="card">
+    <div class="col" data-tab="Apple">
+    <section class="card grow">
       <h2> Apple Health export (full history)</h2>
       <ol class="steps">
         <li>On iPhone open <b>Health</b> → tap your profile picture → <b>Export All Health Data</b>.</li>
@@ -860,8 +947,10 @@
       <div class="progress" id="apple-progress" hidden><span></span></div>
       <p class="muted small">Imports steps, active energy, exercise minutes, distance, sleep, resting heart rate, HRV, weight, calories eaten, protein and all workouts.</p>
     </section>
+    </div>
 
-    <section class="card">
+    <div class="col" data-tab="CSV">
+    <section class="card grow">
       <h2>Google Fit / Health Connect / other CSV</h2>
       <ul class="steps">
         <li><b>Google Fit:</b> takeout.google.com → select <b>Fit</b> → export → open <code>Fit/Daily activity metrics/Daily activity metrics.csv</code>.</li>
@@ -870,16 +959,21 @@
       </ul>
       <label class="file-btn btn">Choose CSV<input type="file" id="csv" accept=".csv,text/csv"></label>
     </section>
+    </div>
 
-    <section class="card">
-      <div class="card-head"><h2>Last 14 days</h2><span class="muted small">Edit any value on the Today tab</span></div>
+    <div class="col" data-tab="Data">
+    <section class="card grow">
+      <div class="card-head"><h2>Last 14 days</h2><span class="muted small">Edit on Today</span></div>
       <div class="scroll-x"><table class="table">
         <thead><tr><th>Date</th>${METRIC_FIELDS.map(([, l, u]) => `<th>${l}${u ? ` <small>${u}</small>` : ''}</th>`).join('')}</tr></thead>
         <tbody>${recent
           .map((d) => `<tr><td><a href="#/today/${d}">${D.fmt(d, { weekday: 'short', month: 'short', day: 'numeric' })}</a></td>${METRIC_FIELDS.map(([k]) => `<td>${fmtNum((s.health[d] || {})[k])}</td>`).join('')}</tr>`)
           .join('')}</tbody>
       </table></div>
-    </section>`;
+    </section>
+    </div>
+    </div>`;
+    finishRender('health');
 
     view.onclick = (e) => {
       if (e.target.id === 'syncbtn') {
@@ -921,12 +1015,15 @@
 
   // ---------------- SETTINGS ----------------
   function renderSettings() {
+    const saved = saveScroll();
     const s = store.get();
     const g = s.settings.goals || {};
     const metricOpts = (sel) =>
       `<option value="">manual</option>${METRIC_FIELDS.map(([k, l]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${l}</option>`).join('')}`;
     view.innerHTML = `
     <header class="page-head"><h1>Settings</h1></header>
+    <div class="page-body layout-3">
+    <div class="col" data-tab="Challenge">
     <section class="card">
       <h2>Challenge</h2>
       <form id="challenge" class="form-grid">
@@ -938,7 +1035,7 @@
       <p class="muted small">${D.diffDays(s.challenge.start, s.challenge.end) + 1} days.</p>
     </section>
 
-    <section class="card">
+    <section class="card grow">
       <h2>Goals</h2>
       <div class="form-grid">
         <label>Goal weight <small>kg</small><input type="number" step="0.1" min="0" inputmode="decimal" data-goal="goalWeight" value="${g.goalWeight ?? ''}" placeholder="—"></label>
@@ -947,8 +1044,10 @@
       </div>
       <p class="muted small">Goals draw a line on the charts and power nutrition and weight-trend insights. A common protein target is 1.6–2.2 g per kg of body weight.</p>
     </section>
+    </div>
 
-    <section class="card">
+    <div class="col" data-tab="Habits">
+    <section class="card grow">
       <div class="card-head"><h2>Habits</h2><button class="btn small" id="add-habit">+ Add habit</button></div>
       <p class="muted small"><b>Check</b> habits are done/not done. <b>Target</b> habits have a number goal; link one to a health metric and it fills itself from synced data. "Train" ticks automatically when you log a workout.</p>
       <div class="habit-editor">
@@ -970,7 +1069,9 @@
           .join('')}
       </div>
     </section>
+    </div>
 
+    <div class="col" data-tab="Data">
     <section class="card">
       <h2>Your data</h2>
       <p class="muted small">Stored only in this browser. Export a backup regularly, and to move between devices.</p>
@@ -980,7 +1081,10 @@
         <button class="btn ghost" id="demo">Load demo data</button>
         <button class="btn danger" id="reset">Reset everything</button>
       </div>
-    </section>`;
+    </section>
+    </div>
+    </div>`;
+    finishRender('settings', saved);
 
     const editHabit = (i, fn) => {
       store.update((st) => fn(st.habits[i], st));
