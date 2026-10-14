@@ -3,6 +3,7 @@
 (function (root) {
   const WA = (root.WA = root.WA || {});
   const KEY = 'winterarc.v1';
+  WA.VERSION = '2026.10.14';
 
   // ---------- dates (always local calendar days, 'YYYY-MM-DD') ----------
   const pad = (n) => String(n).padStart(2, '0');
