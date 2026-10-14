@@ -1,5 +1,5 @@
-/* Offline support: cache the app shell, serve it cache-first, refresh in the background. */
-const CACHE = 'winterarc-v4';
+/* Offline support, network-first: always fetch fresh code when online, fall back to the cache offline. */
+const CACHE = 'winterarc-v5';
 const ASSETS = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest', 'icons/icon.svg',
   'js/store.js', 'js/icons.js', 'js/charts.js', 'js/strength.js', 'js/health-import.js', 'js/insights.js', 'js/reminders.js', 'js/demo.js', 'js/app.js',
@@ -13,17 +13,15 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then((hit) => {
-      const net = fetch(e.request)
-        .then((res) => {
-          if (res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
-          return res;
-        })
-        .catch(() => hit);
-      return hit || net;
-    })
+    fetch(e.request, { cache: 'no-cache' })
+      .then((res) => {
+        if (res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
+        return res;
+      })
+      .catch(() => caches.match(e.request, { ignoreSearch: true }).then((hit) => hit || (e.request.mode === 'navigate' ? caches.match('index.html') : undefined)))
   );
 });
+self.addEventListener('message', (e) => e.data === 'skipWaiting' && self.skipWaiting());
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   e.waitUntil(

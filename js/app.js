@@ -1081,6 +1081,7 @@
         <button class="btn ghost" id="demo">Load demo data</button>
         <button class="btn danger" id="reset">Reset everything</button>
       </div>
+      <p class="muted small">Winter Arc ${WA.VERSION} · <a href="#" id="check-update">Check for updates</a></p>
     </section>
     </div>
     </div>`;
@@ -1111,6 +1112,10 @@
           toast('Demo data loaded');
           go('#/today');
         });
+      } else if (e.target.id === 'check-update') {
+        e.preventDefault();
+        if (!navigator.serviceWorker) return toast('Reload the page to update');
+        navigator.serviceWorker.getRegistration().then((reg) => (reg ? reg.update().then(() => toast(reg.installing || reg.waiting ? 'Update found, installing…' : `You're on the latest version (${WA.VERSION})`)) : toast('Reload the page to update')));
       } else if (e.target.id === 'reset') {
         ask('Delete all Winter Arc data on this device? Export a backup first if unsure.', { ok: 'Delete everything', danger: true }).then((y) => {
           if (!y) return;
@@ -1183,5 +1188,25 @@
   }
   route();
   reminders.start();
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloading) return;
+      reloading = true;
+      location.reload();
+    });
+    navigator.serviceWorker
+      .register('sw.js')
+      .then((reg) => {
+        reg.update().catch(() => {});
+        reg.addEventListener('updatefound', () => {
+          const w = reg.installing;
+          w && w.addEventListener('statechange', () => {
+            if (w.state === 'installed' && navigator.serviceWorker.controller) toast('A new version is ready', [{ label: 'Reload', fn: () => location.reload() }]);
+          });
+        });
+        document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && reg.update().catch(() => {}));
+      })
+      .catch(() => {});
+  }
 })();
