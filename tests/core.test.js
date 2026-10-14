@@ -5,7 +5,7 @@ const path = require('path');
 const zlib = require('zlib');
 const mem = {};
 globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => (mem[k] = v) };
-for (const f of ['store', 'charts', 'health-import', 'insights', 'demo']) require(path.join(__dirname, '..', 'js', f + '.js'));
+for (const f of ['store', 'charts', 'strength', 'health-import', 'insights', 'demo']) require(path.join(__dirname, '..', 'js', f + '.js'));
 const WA = globalThis.WA;
 
 const XML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -116,4 +116,33 @@ test('charts render SVG and empty states', () => {
   assert.match(WA.charts.bar([{ label: 'a', y: 3 }, { label: 'b', y: 0 }], { goal: 2 }), /<svg/);
   assert.match(WA.charts.line([{ label: 'a', y: null }], {}), /chart-empty/);
   assert.match(WA.charts.heatmap([{ date: '2026-10-01', score: 1, tip: 'x' }]), /hm-4/);
+});
+
+test('strength: history, est 1RM, PRs and weekly tonnage', () => {
+  const s = WA.defaultState();
+  s.workouts.push(
+    { id: 'a', date: '2026-10-05', type: 'Strength', duration: 45, exercises: [{ name: 'Squat', sets: 3, reps: 5, weight: 100 }, { name: 'Bench', sets: 3, reps: 5, weight: 60 }] },
+    { id: 'b', date: '2026-10-07', type: 'Strength', duration: 45, exercises: [{ name: 'squat', sets: 3, reps: 5, weight: 102.5 }] },
+    { id: 'c', date: '2026-10-09', type: 'Strength', duration: 45, exercises: [{ name: 'Squat', sets: 3, reps: 3, weight: 105 }] } // 105×(1+3/30)=115.5 < 122.1: not a PR
+  );
+  const sum = WA.strength.summary(s);
+  const squat = sum.find((x) => x.key === 'squat');
+  assert.strictEqual(squat.sessions, 3);
+  assert.strictEqual(squat.best.e1rm, 119.6);
+  assert.deepStrictEqual(squat.prs, ['2026-10-07']);
+  assert.strictEqual(WA.strength.prsOn(s, '2026-10-09').length, 0);
+  assert.strictEqual(WA.strength.weekVolume(s, '2026-10-05'), 3 * 5 * 100 + 3 * 5 * 60 + 3 * 5 * 102.5 + 3 * 3 * 105);
+});
+
+test('sync text import: units, minutes, pounds, repeats', () => {
+  const r = WA.health.importSyncText('Steps=2026-10-13:12034,2026-10-12:8800;sleep=2026-10-13:444;RHR=2026-10-13:57;weightlb=2026-10-13:180;protein=2026-10-13:80,2026-10-13:70');
+  assert.deepStrictEqual(r.days['2026-10-13'], { steps: 12034, sleepHrs: 7.4, restingHR: 57, weight: 81.65, protein: 150 });
+  assert.deepStrictEqual(r.days['2026-10-12'], { steps: 8800 });
+  assert.throws(() => WA.health.importSyncText('nothing useful'));
+});
+
+test('insights: plan, PR, nutrition and goal-weight rules fire', () => {
+  const s = WA.demo(WA.defaultState());
+  const ids = WA.insights.generate(s).map((i) => i.id);
+  for (const want of ['pr', 'goal-weight']) assert.ok(ids.includes(want), `${want} missing from ${ids}`);
 });

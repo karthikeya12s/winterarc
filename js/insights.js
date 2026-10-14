@@ -72,6 +72,70 @@
       if (gap >= 3) add('workout-gap', 'warn', `${gap} days since your last workout`, `Last logged session: ${fmt(lastWorkout, { weekday: 'short', month: 'short', day: 'numeric' })}. Even 20 minutes keeps the chain going.`);
     }
 
+    // --- this week's plan ---
+    const plan = s.plans[weekStart(t)];
+    if (plan && prog.started && !prog.ended) {
+      const dowName = fmt(t, { weekday: 'short' });
+      const plannedType = plan.types && plan.types[dowName];
+      if (plannedType && !WA.workoutsOn(s, t).length && new Date().getHours() >= 12)
+        add('planned-today', 'warn', `${plannedType} is on the plan today`, `You scheduled it in your weekly review. Tap the ${plannedType} chip on Today to log it.`);
+      const focus = plan.focus && s.habits.find((h) => h.id === plan.focus);
+      if (focus) {
+        const wkDays = range(weekStart(t), t).filter(inChallenge);
+        const hit = wkDays.filter((d) => calc.habitDone(s, focus, d)).length;
+        if (wkDays.length >= 2 && hit < wkDays.length - 1)
+          add('focus-slipping', 'warn', `Focus habit ${focus.icon} ${focus.name}: ${hit}/${wkDays.length} days`, `You picked this as the one to fix this week. Make it the first thing you do tomorrow.`);
+      }
+    }
+
+    // --- Sunday review nudge ---
+    const dow = parse(t).getDay();
+    const thisWeekKey = weekStart(t);
+    if (prog.started && !prog.ended && !(s.reviews[thisWeekKey] || {}).done && (dow === 0 || dow === 6) && new Date().getHours() >= 15)
+      add('do-review', 'info', 'Time for your weekly review', 'Five minutes: what worked, what to change, and the plan for next week. Open the Review tab.');
+
+    // --- strength PRs ---
+    if (WA.strength) {
+      const recentPRs = range(addDays(t, -6), t).flatMap((d) => WA.strength.prsOn(s, d).map((p) => ({ ...p, date: d })));
+      if (recentPRs.length) {
+        const top = recentPRs[recentPRs.length - 1];
+        add('pr', 'good', `${recentPRs.length} PR${recentPRs.length > 1 ? 's' : ''} this week`, `${top.name}: ${top.weight} kg × ${top.reps} (est. 1RM ${top.e1rm} kg) on ${fmt(top.date, { weekday: 'short' })}.`);
+      }
+      const vNow = WA.strength.weekVolume(s, weekStart(t)), vPrev = WA.strength.weekVolume(s, addDays(weekStart(t), -7));
+      if (vPrev > 0 && vNow > vPrev * 1.1) add('tonnage-up', 'good', `Lifting volume up ${Math.round(((vNow - vPrev) / vPrev) * 100)}%`, `${Math.round(vNow / 1000)} t this week vs ${Math.round(vPrev / 1000)} t last week.`);
+      const stale = WA.strength.summary(s).filter((x) => x.sessions >= 3 && WA.date.diffDays(x.last.date, t) >= 10);
+      if (stale.length) add('lift-stale', 'info', `${stale[0].name} hasn't been trained in ${WA.date.diffDays(stale[0].last.date, t)} days`, 'Strength you don\'t train fades in 2–3 weeks. Put it back on the plan.');
+    }
+
+    // --- nutrition ---
+    const goals = (s.settings && s.settings.goals) || {};
+    const prot7 = vals(s, 'protein', past7);
+    if (goals.protein && prot7.length >= 3) {
+      const avg = Math.round(mean(prot7));
+      if (avg < goals.protein * 0.85) add('protein-low', 'warn', `Protein averaging ${avg} g, goal ${goals.protein} g`, `${Math.round((avg / goals.protein) * 100)}% of target over ${prot7.length} logged days. Add a protein source to breakfast — that's where most people fall short.`);
+      else add('protein-ok', 'good', `Protein on track: ${avg} g a day`, `Goal is ${goals.protein} g.`);
+    }
+    const kcal7 = vals(s, 'calories', past7);
+    if (goals.calories && kcal7.length >= 3) {
+      const avg = Math.round(mean(kcal7));
+      const diff = avg - goals.calories;
+      if (Math.abs(diff) > goals.calories * 0.1) add('kcal-off', 'warn', `Eating ${Math.abs(diff)} kcal ${diff > 0 ? 'over' : 'under'} target`, `${avg} kcal/day average vs ${goals.calories} goal over ${kcal7.length} logged days.`);
+    }
+    if (goals.goalWeight) {
+      const ws = Object.keys(s.health).filter((d) => s.health[d].weight != null && d <= t).sort();
+      if (ws.length >= 4) {
+        const last = s.health[ws[ws.length - 1]].weight;
+        const firstIdx = ws.findIndex((d) => WA.date.diffDays(d, t) <= 28);
+        const first = s.health[ws[Math.max(0, firstIdx)]].weight;
+        const span = Math.max(1, WA.date.diffDays(ws[Math.max(0, firstIdx)], ws[ws.length - 1]));
+        const perWeek = ((last - first) / span) * 7;
+        const toGo = goals.goalWeight - last;
+        if (Math.abs(toGo) < 0.3) add('goal-weight', 'good', 'You are at your goal weight', `${last} kg. Shift to maintenance and keep the habits.`);
+        else if (Math.sign(perWeek) === Math.sign(toGo) && Math.abs(perWeek) >= 0.1) add('goal-weight', 'info', `On pace to reach ${goals.goalWeight} kg in ~${Math.ceil(Math.abs(toGo / perWeek))} weeks`, `${Math.abs(perWeek).toFixed(2)} kg/week over the last ${span} days; ${Math.abs(toGo).toFixed(1)} kg to go.`);
+        else if (Math.abs(toGo) >= 1) add('goal-weight', 'warn', `Weight is not moving toward ${goals.goalWeight} kg`, `${last} kg now, ${Math.abs(toGo).toFixed(1)} kg to go, trend ${perWeek >= 0 ? '+' : ''}${perWeek.toFixed(2)} kg/week.`);
+      }
+    }
+
     // --- best training day ---
     if (s.workouts.length >= 8) {
       const counts = Array(7).fill(0);

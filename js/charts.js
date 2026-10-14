@@ -16,12 +16,13 @@
   function frame(points, { height = 180, goal, min }) {
     const W = 640, H = height, L = 40, R = 8, T = 12, B = 24;
     const ys = points.map((p) => p.y).filter((y) => y != null);
-    const TICKS = 4;
+    const TICKS = H < 120 ? 2 : 4;
     let lo = 0, hi = Math.max(...ys, goal || 0, 1);
     if (min === 'auto' && ys.length) {
-      const span = Math.max(...ys) - Math.min(...ys) || 1;
-      lo = Math.min(...ys) - span * 0.15;
-      hi = Math.max(...ys) + span * 0.15;
+      const all = goal ? ys.concat(goal) : ys;
+      const span = Math.max(...all) - Math.min(...all) || 1;
+      lo = Math.min(...all) - span * 0.15;
+      hi = Math.max(...all) + span * 0.15;
     }
     const step = niceStep(hi - lo, TICKS);
     lo = Math.floor(lo / step) * step;

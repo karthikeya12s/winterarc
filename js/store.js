@@ -55,10 +55,12 @@
         { id: 'cold', name: 'Cold shower', icon: '🧊', kind: 'check' },
       ],
       days: {}, // date -> { habits: {id: true|number}, note }
-      workouts: [], // {id,date,type,duration,rpe,calories,distance,notes,source}
-      health: {}, // date -> { steps, activeEnergy, exerciseMin, restingHR, hrv, sleepHrs, weight, distanceKm }
+      workouts: [], // {id,date,type,duration,rpe,calories,distance,notes,source, exercises:[{name,sets,reps,weight}]}
+      health: {}, // date -> { steps, activeEnergy, exerciseMin, restingHR, hrv, sleepHrs, weight, distanceKm, calories, protein }
       healthMeta: { lastImport: null, source: null, records: 0 },
-      settings: { reminderTime: '07:00', notify: false },
+      plans: {}, // weekStart -> { focus: habitId, days: ['Mon','Wed'], types: {Mon:'Strength'}, note }
+      reviews: {}, // weekStart -> { worked, change, done: true }
+      settings: { reminderTime: '07:00', notify: false, lastDuration: {}, goals: { calories: null, protein: null, goalWeight: null } },
     };
   }
   WA.defaultState = defaultState;
@@ -84,7 +86,9 @@
       ...d,
       ...s,
       challenge: { ...d.challenge, ...(s.challenge || {}) },
-      settings: { ...d.settings, ...(s.settings || {}) },
+      settings: { ...d.settings, ...(s.settings || {}), goals: { ...d.settings.goals, ...((s.settings || {}).goals || {}) }, lastDuration: { ...((s.settings || {}).lastDuration || {}) } },
+      plans: s.plans || {},
+      reviews: s.reviews || {},
       healthMeta: { ...d.healthMeta, ...(s.healthMeta || {}) },
     };
   }
