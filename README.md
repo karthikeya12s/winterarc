@@ -2,12 +2,14 @@
 
 A tracker for your Winter Arc challenge, built as an installable web app (PWA). There's no build step and no server, and your data stays on your device.
 
-- **Today**: tick off daily habits, log workouts, enter body metrics, and write notes. Habits linked to health data (steps, sleep) complete themselves, and "Train" ticks when you log a workout.
-- **Workouts**: full history grouped by week, filterable by type, with weekly and challenge totals.
+- **Today**: a 10-second check-in. Tap pills to tick habits, +/− steppers for water and steps, one-tap workout logging with your usual duration (Undo in the toast), body and food numbers, and notes. Habits linked to health data complete themselves; "Train" ticks when you log a workout.
+- **Workouts**: lifts with sets × reps × kg per session, a per-exercise history with estimated 1RM trend and PR detection, "Copy last" to repeat a session, and the full history grouped by week.
+- **Review**: a weekly review page: the week's numbers vs the previous week, what worked / what to change, and a plan for next week (one focus habit plus training days). Planned days show on Today.
 - **Progress**: switch between Week, 30-day and whole-challenge views. Includes a calendar heatmap, streaks, per-habit completion, and charts for workout minutes, steps, sleep, resting HR, weight and active energy.
-- **Insights**: rule-based nudges such as streak at risk, weakest habit, training volume vs last week, sleep debt, resting-HR/HRV drift, weight trend and best training day.
+- **Insights**: rule-based nudges such as streak at risk, weakest habit, planned-session reminders, PRs and stale lifts, protein/calorie targets, goal-weight pace, sleep debt, resting-HR/HRV drift and best training day.
+- **Share**: a one-tap text summary of any week to send to a friend or group chat.
 - **Reminders**: a calendar file (.ics) with a daily check-in and an 8 pm alarm, plus in-app notifications.
-- **Health import**: Apple Health export (`export.zip` / `export.xml`), Google Fit Takeout CSV, and any daily CSV (Health Connect, Health Auto Export, Fitbit, Garmin, spreadsheets).
+- **Health sync**: one-tap sync from an iPhone Shortcut via a URL, Apple Health export (`export.zip` / `export.xml`), Google Fit Takeout CSV, and any daily CSV (Health Connect, Health Auto Export, Fitbit, Garmin, MyFitnessPal, spreadsheets).
 
 ## Run it
 
@@ -26,6 +28,7 @@ Apple HealthKit and Google Health Connect are on-device APIs, and only native ap
 
 | Source | How |
 |---|---|
+| iPhone Shortcut (one tap, can be automated daily) | The app accepts `?sync=steps=2026-10-13:12034,…;sleep=…;rhr=…;weight=…;kcal=…;protein=…` on its URL. The Health tab has step-by-step instructions for a Shortcut that builds that URL from the last 7 days of Health data and opens it. |
 | Apple Health | Health app → profile picture → *Export All Health Data* → choose `export.zip` on the Health tab. It's streamed and parsed in the browser, so multi-GB exports work. |
 | Google Fit | takeout.google.com → *Fit* → `Daily activity metrics.csv` |
 | Health Connect, Samsung, Fitbit, Garmin | export daily summaries as CSV. Apps like *Health Sync* (Android) and *Health Auto Export* (iOS) can do this on a schedule. |
@@ -49,6 +52,7 @@ js/store.js           state, persistence, dates, streak/score calculations
 js/health-import.js   Apple Health XML/ZIP streaming parser, CSV importer
 js/insights.js        insight rules
 js/charts.js          dependency-free SVG charts
+js/strength.js        lift history, estimated 1RM, PRs, weekly tonnage
 js/reminders.js       notifications + .ics generation
 js/app.js             router and views
 sw.js                 offline cache

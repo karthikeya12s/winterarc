@@ -19,6 +19,8 @@
     hrv: { label: 'HRV', unit: 'ms', agg: 'avg' },
     sleepHrs: { label: 'Sleep', unit: 'h', agg: 'sum' },
     weight: { label: 'Weight', unit: 'kg', agg: 'last' },
+    calories: { label: 'Calories eaten', unit: 'kcal', agg: 'sum' },
+    protein: { label: 'Protein', unit: 'g', agg: 'sum' },
   };
 
   const APPLE_TYPES = {
@@ -29,6 +31,8 @@
     HKQuantityTypeIdentifierRestingHeartRate: 'restingHR',
     HKQuantityTypeIdentifierHeartRateVariabilitySDNN: 'hrv',
     HKQuantityTypeIdentifierBodyMass: 'weight',
+    HKQuantityTypeIdentifierDietaryEnergyConsumed: 'calories',
+    HKQuantityTypeIdentifierDietaryProtein: 'protein',
     HKCategoryTypeIdentifierSleepAnalysis: 'sleep',
   };
 
@@ -103,7 +107,7 @@
         let v = parseFloat(a.value);
         if (!isFinite(v)) return;
         if (metric === 'distanceKm') v = toKm(v, a.unit);
-        if (metric === 'activeEnergy' && a.unit === 'kJ') v = v / 4.184;
+        if ((metric === 'activeEnergy' || metric === 'calories') && a.unit === 'kJ') v = v / 4.184;
         const agg = METRICS[metric].agg;
         if (agg === 'sum') addSum(metric, date, src, v);
         else if (agg === 'avg') {
@@ -344,6 +348,8 @@
     ['restingHR', /resting.*(heart|hr)/i],
     ['hrv', /hrv|variability/i],
     ['exerciseMin', /exercise|move min|active min/i],
+    ['calories', /dietary|intake|consumed|food|eaten/i],
+    ['protein', /protein/i],
     ['activeEnergy', /active.*(energy|cal)|calorie|kcal|energy burned/i],
     ['distanceKm', /distance/i],
     ['weight', /weight|body mass/i],
@@ -398,7 +404,7 @@
         if (metric === 'distanceKm') v = /\(m\)|meters|metres/i.test(h) ? v / 1000 : /mi\b|mile/i.test(h) ? v * 1.609344 : v;
         if (metric === 'weight') v = /lb|pound/i.test(h) ? v * 0.45359237 : v;
         if (metric === 'sleepHrs') v = /min/i.test(h) || v > 24 ? v / 60 : v;
-        if (metric === 'activeEnergy' && /kj/i.test(h)) v /= 4.184;
+        if ((metric === 'activeEnergy' || metric === 'calories') && /kj/i.test(h)) v /= 4.184;
         const prev = days[date] && days[date][metric];
         // rows can repeat a date (e.g. 15-min buckets): add sums, keep the latest for others
         const val = METRICS[metric].agg === 'sum' && prev != null ? prev + v : v;
@@ -407,6 +413,43 @@
       }
     }
     return { days, workouts: [], records, columns: Object.keys(map) };
+  }
+
+  // ---------- one-tap sync text (from an iOS Shortcut or anything that can open a URL) ----------
+  // Format: metric=date:value,date:value;metric=...   e.g. steps=2026-10-13:12034,2026-10-12:8800;sleep=2026-10-13:7.4
+  const SYNC_KEYS = {
+    steps: 'steps', sleep: 'sleepHrs', sleephrs: 'sleepHrs', rhr: 'restingHR', restinghr: 'restingHR', hrv: 'hrv',
+    weight: 'weight', weightlb: 'weight', kcal: 'calories', calories: 'calories', protein: 'protein',
+    active: 'activeEnergy', activeenergy: 'activeEnergy', exercise: 'exerciseMin', exercisemin: 'exerciseMin', distance: 'distanceKm',
+  };
+  function importSyncText(text) {
+    const days = {};
+    let records = 0;
+    const columns = new Set();
+    for (const part of String(text || '').split(/[;\n]/)) {
+      const eq = part.indexOf('=');
+      if (eq < 0) continue;
+      const rawKey = part.slice(0, eq).trim().toLowerCase().replace(/[^a-z]/g, '');
+      const metric = SYNC_KEYS[rawKey];
+      if (!metric) continue;
+      for (const pair of part.slice(eq + 1).split(',')) {
+        const m = /^\s*([^:]+?)\s*:\s*([-\d.]+)/.exec(pair);
+        if (!m) continue;
+        const date = csvDate(m[1]);
+        let v = parseFloat(m[2]);
+        if (!date || !isFinite(v)) continue;
+        if (rawKey === 'weightlb') v *= 0.45359237;
+        if (metric === 'sleepHrs' && v > 24) v /= 60; // minutes
+        if (metric === 'distanceKm' && v > 500) v /= 1000; // metres
+        const prev = (days[date] || {})[metric];
+        const val = METRICS[metric].agg === 'sum' && prev != null ? prev + v : v;
+        (days[date] = days[date] || {})[metric] = metric === 'distanceKm' || metric === 'weight' || metric === 'sleepHrs' ? +val.toFixed(2) : Math.round(val);
+        columns.add(metric);
+        records++;
+      }
+    }
+    if (!records) throw new Error('No readable values. Expected text like steps=2026-10-13:12034;sleep=2026-10-13:7.4');
+    return { days, workouts: [], records, columns: [...columns] };
   }
 
   /** Merge an import result into app state. Imported values overwrite the same metric; manual values for other metrics stay. */
@@ -423,5 +466,5 @@
     return { days: Object.keys(result.days).length, workouts: added };
   }
 
-  WA.health = { METRICS, importAppleHealth, importCSVText, mergeImport, AppleXmlParser, parseCSV, prettyWorkoutType };
+  WA.health = { METRICS, importAppleHealth, importCSVText, importSyncText, mergeImport, AppleXmlParser, parseCSV, prettyWorkoutType };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -24,6 +24,7 @@
     <a href="#/today" data-icon="today"><span>Today</span></a>
     <a href="#/workouts" data-icon="workouts"><span>Workouts</span></a>
     <a href="#/progress" data-icon="progress"><span>Progress</span></a>
+    <a href="#/review" data-icon="review"><span>Review</span></a>
     <a href="#/insights" data-icon="insights"><span>Insights</span></a>
     <a href="#/health" data-icon="health"><span>Health</span></a>
     <a href="#/settings" data-icon="settings"><span>Settings</span></a>
@@ -46,8 +47,12 @@
         <label>Distance <small>km</small><input type="number" name="distance" min="0" step="0.01" inputmode="decimal"></label>
         <label>Calories <small>kcal</small><input type="number" name="calories" min="0" inputmode="numeric"></label>
       </div>
-      <label>Notes<textarea name="notes" rows="2" placeholder="Lifts, sets × reps, PRs, how it felt…"></textarea></label>
+      <div class="ex-head"><span>Lifts <small>sets × reps × kg</small></span>
+        <span class="btn-row"><button type="button" class="btn small ghost" data-copy-last>Copy last</button><button type="button" class="btn small ghost" data-add-ex>+ Exercise</button></span></div>
+      <div id="exercises" class="ex-list"></div>
+      <label>Notes<textarea name="notes" rows="2" placeholder="How it felt, what to change next time…"></textarea></label>
       <datalist id="types"></datalist>
+      <datalist id="exnames"></datalist>
       <div class="btn-row end">
         <button type="button" class="btn ghost" data-cancel>Cancel</button>
         <button class="btn">Save workout</button>
@@ -66,6 +71,7 @@
   <script src="js/store.js"></script>
   <script src="js/icons.js"></script>
   <script src="js/charts.js"></script>
+  <script src="js/strength.js"></script>
   <script src="js/health-import.js"></script>
   <script src="js/insights.js"></script>
   <script src="js/reminders.js"></script>
