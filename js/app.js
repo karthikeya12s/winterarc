@@ -35,21 +35,62 @@
     a.click();
     setTimeout(() => (URL.revokeObjectURL(a.href), a.remove()), 0);
   }
+  const INSIGHT_ICON = { warn: 'alert', good: 'check', info: 'spark' };
   const insightCard = (i) => `<div class="insight ${i.level}">
-      <span class="insight-icon" aria-hidden="true">${i.level === 'warn' ? '⚠️' : i.level === 'good' ? '✅' : '💡'}</span>
+      <span class="insight-icon" aria-hidden="true">${WA.icon(INSIGHT_ICON[i.level])}</span>
       <div><strong>${esc(i.title)}</strong><p>${esc(i.body)}</p></div></div>`;
+
+  // In-page confirm/alert: native dialogs are blocked in some embedded viewers and look out of place.
+  function ask(message, { ok = 'OK', danger = false, cancel = 'Cancel' } = {}) {
+    const dlg = $('#confirm-dialog');
+    $('p', dlg).textContent = message;
+    const okBtn = $('[data-ok]', dlg), cancelBtn = $('[data-cancel]', dlg);
+    okBtn.textContent = ok;
+    okBtn.classList.toggle('danger-solid', danger);
+    cancelBtn.hidden = cancel == null;
+    cancelBtn.textContent = cancel || '';
+    dlg.showModal();
+    return new Promise((resolve) => {
+      const done = (v) => () => (dlg.close(), (okBtn.onclick = cancelBtn.onclick = dlg.oncancel = null), resolve(v));
+      okBtn.onclick = done(true);
+      cancelBtn.onclick = dlg.oncancel = done(false);
+    });
+  }
+  const tell = (message) => ask(message, { cancel: null });
+  WA.ui = { ask, tell };
 
   // ---------------- router ----------------
   const routes = { today: renderToday, workouts: renderWorkouts, progress: renderProgress, insights: renderInsights, health: renderHealth, settings: renderSettings };
+  let current = location.hash || '#/today';
+  function go(h) {
+    current = h;
+    try {
+      if (location.hash !== h) history.pushState(null, '', h);
+    } catch (e) {}
+    route();
+    window.scrollTo(0, 0);
+  }
   function route() {
-    const [, name = 'today', arg] = location.hash.split('/');
+    const [, name = 'today', arg] = current.split('/');
     const fn = routes[name] || renderToday;
     $$('.nav a').forEach((a) => a.classList.toggle('active', a.getAttribute('href') === `#/${name}`));
     view.innerHTML = '';
     fn(arg);
     view.focus({ preventScroll: true });
   }
-  window.addEventListener('hashchange', () => (route(), window.scrollTo(0, 0)));
+  window.addEventListener('popstate', () => ((current = location.hash || '#/today'), route()));
+  window.addEventListener('hashchange', () => {
+    if (location.hash === current) return;
+    current = location.hash;
+    route();
+    window.scrollTo(0, 0);
+  });
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#/"]');
+    if (!a || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    if (!a.classList.contains('disabled')) go(a.getAttribute('href'));
+  });
 
   // ---------------- TODAY ----------------
   function renderToday(arg) {
@@ -58,7 +99,8 @@
     const day = arg && /^\d{4}-\d\d-\d\d$/.test(arg) ? arg : t;
     const prog = calc.challengeProgress(s, day);
     const score = calc.dayScore(s, day);
-    const { current, best } = calc.streaks(s, t);
+    const { current: streakNow, best } = calc.streaks(s, t);
+    const weekSessions = s.workouts.filter((w) => w.date >= D.weekStart(day) && w.date <= D.addDays(D.weekStart(day), 6)).length;
     const entry = s.days[day] || { habits: {}, note: '' };
     const hd = s.health[day] || {};
     const ws = WA.workoutsOn(s, day);
@@ -74,14 +116,36 @@
       </div>
     </header>
 
-    <section class="hero card">
-      ${charts.ring(prog.pct, prog.started ? `Day ${prog.day}` : 'Soon', prog.started ? `of ${prog.total}` : `starts ${D.fmt(s.challenge.start)}`)}
+    <section class="hero">
+      <div class="hero-top">
+        <div class="hero-title">
+          <span class="eyebrow">${esc(s.challenge.name)}</span>
+          ${
+            prog.started
+              ? `<div class="hero-day"><span class="hero-num">${prog.day}</span><span class="hero-of">of ${prog.total}<br>days</span></div>`
+              : `<div class="hero-day"><span class="hero-num">${D.diffDays(day, s.challenge.start)}</span><span class="hero-of">days<br>to go</span></div>`
+          }
+        </div>
+        ${charts.ring(score, pct(score), day === t ? 'today' : 'that day')}
+      </div>
+      ${charts.arc(s.challenge.start, s.challenge.end, day)}
       <div class="hero-stats">
-        <div class="stat"><span class="stat-num">${pct(score)}</span><span class="stat-label">${day === t ? "today's" : 'day'} habits</span></div>
-        <div class="stat"><span class="stat-num">${current}🔥</span><span class="stat-label">current streak</span></div>
+        <div class="stat"><span class="stat-num">${streakNow}</span><span class="stat-label">day streak</span></div>
         <div class="stat"><span class="stat-num">${best}</span><span class="stat-label">best streak</span></div>
+        <div class="stat"><span class="stat-num">${weekSessions}</span><span class="stat-label">sessions this week</span></div>
       </div>
     </section>
+
+    <nav class="week-strip" aria-label="This week">
+      ${D.range(D.weekStart(day), D.addDays(D.weekStart(day), 6))
+        .map((d) => {
+          const future = d > t;
+          const sc = future ? 0 : calc.dayScore(s, d);
+          return `<a href="#/today/${d}" class="wday ${d === day ? 'sel' : ''} ${future ? 'disabled future' : ''}" aria-label="${D.fmt(d, { weekday: 'long', month: 'short', day: 'numeric' })}">
+            <span class="wday-name">${D.fmt(d, { weekday: 'narrow' })}</span>${charts.miniRing(sc, D.parse(d).getDate())}</a>`;
+        })
+        .join('')}
+    </nav>
 
     ${ins.length ? `<section class="stack">${ins.map(insightCard).join('')}</section>` : ''}
 
@@ -94,15 +158,15 @@
             const manual = entry.habits[h.id];
             if (h.kind === 'check') {
               const auto = manual === undefined && done;
-              return `<li class="habit ${done ? 'done' : ''}">
-                <button class="check" data-toggle="${h.id}" aria-pressed="${done}" aria-label="${esc(h.name)}">${done ? '✓' : ''}</button>
+              return `<li class="habit ${done ? 'done' : ''}" data-toggle="${h.id}">
+                <button class="check" data-toggle="${h.id}" aria-pressed="${done}" aria-label="${esc(h.name)}">${WA.icon('check')}</button>
                 <span class="habit-icon">${h.icon}</span><span class="habit-name">${esc(h.name)}</span>
                 ${auto ? '<span class="badge">auto</span>' : ''}</li>`;
             }
             const v = calc.habitValue(s, h, day);
             const fromHealth = typeof manual !== 'number' && v != null;
             return `<li class="habit ${done ? 'done' : ''}">
-              <span class="check static" aria-hidden="true">${done ? '✓' : ''}</span>
+              <span class="check static" aria-hidden="true">${WA.icon('check')}</span>
               <span class="habit-icon">${h.icon}</span>
               <span class="habit-name">${esc(h.name)}<span class="bar-mini"><span style="width:${Math.min(100, ((v || 0) / h.target) * 100)}%"></span></span></span>
               <span class="habit-input"><input type="number" inputmode="decimal" step="any" min="0" data-value="${h.id}" value="${v ?? ''}" placeholder="0" aria-label="${esc(h.name)} amount">
@@ -181,10 +245,12 @@
   }
   function handleWorkoutRowClick(e, rerender) {
     const del = e.target.closest('[data-del]');
-    if (del && confirm('Delete this workout?')) {
-      store.update((st) => (st.workouts = st.workouts.filter((w) => w.id !== del.dataset.del)));
-      rerender();
-    }
+    if (del)
+      ask('Delete this workout?', { ok: 'Delete', danger: true }).then((yes) => {
+        if (!yes) return;
+        store.update((st) => (st.workouts = st.workouts.filter((w) => w.id !== del.dataset.del)));
+        rerender();
+      });
     const ed = e.target.closest('[data-edit]');
     if (ed) openWorkoutDialog(store.get().workouts.find((w) => w.id === ed.dataset.edit));
   }
@@ -391,7 +457,7 @@
         return renderProgress();
       }
       const cell = e.target.closest('[data-date]');
-      if (cell && cell.dataset.date <= t) location.hash = `#/today/${cell.dataset.date}`;
+      if (cell && cell.dataset.date <= t) go(`#/today/${cell.dataset.date}`);
     };
     view.onchange = null;
   }
@@ -518,7 +584,7 @@
         renderHealth();
       } catch (err) {
         console.error(err);
-        alert(`Import failed: ${err.message}`);
+        tell(`Import failed: ${err.message}`);
         renderHealth();
       }
     };
@@ -584,7 +650,7 @@
       const row = e.target.closest('.he-row');
       const i = row && +row.dataset.i;
       if (e.target.closest('[data-remove]')) {
-        if (confirm('Remove this habit? Past check-ins for it are kept in your data.')) editHabit(i, (h, st) => st.habits.splice(i, 1));
+        ask('Remove this habit? Past check-ins for it stay in your data.', { ok: 'Remove', danger: true }).then((y) => y && editHabit(i, (h, st) => st.habits.splice(i, 1)));
       } else if (e.target.closest('[data-move]')) {
         const j = i + +e.target.closest('[data-move]').dataset.move;
         editHabit(i, (h, st) => j >= 0 && j < st.habits.length && ([st.habits[i], st.habits[j]] = [st.habits[j], st.habits[i]]));
@@ -595,17 +661,19 @@
       } else if (e.target.id === 'export') {
         download(`winter-arc-backup-${D.today()}.json`, JSON.stringify(store.get(), null, 1), 'application/json');
       } else if (e.target.id === 'demo') {
-        if (confirm('Replace your data with 6 weeks of sample data?')) {
+        ask('Replace your data with 6 weeks of sample data?', { ok: 'Load demo data' }).then((y) => {
+          if (!y) return;
           store.set(WA.demo(store.get()));
           toast('Demo data loaded');
-          location.hash = '#/progress';
-        }
+          go('#/progress');
+        });
       } else if (e.target.id === 'reset') {
-        if (confirm('Delete ALL Winter Arc data on this device? Export a backup first if unsure.')) {
+        ask('Delete all Winter Arc data on this device? Export a backup first if unsure.', { ok: 'Delete everything', danger: true }).then((y) => {
+          if (!y) return;
           store.reset();
           toast('Reset complete');
           renderSettings();
-        }
+        });
       }
     };
     view.onchange = async (e) => {
@@ -626,20 +694,20 @@
         try {
           const data = JSON.parse(await el.files[0].text());
           if (!data.challenge || !Array.isArray(data.habits)) throw new Error('Not a Winter Arc backup');
-          if (confirm('Replace current data with this backup?')) {
+          if (await ask('Replace current data with this backup?', { ok: 'Restore' })) {
             store.set(data);
             toast('Backup restored');
             renderSettings();
           }
         } catch (err) {
-          alert(`Could not restore: ${err.message}`);
+          tell(`Could not restore: ${err.message}`);
         }
       }
     };
     $('#challenge').onsubmit = (e) => {
       e.preventDefault();
       const f = e.target.elements;
-      if (f.end.value < f.start.value) return alert('End date must be after the start date.');
+      if (f.end.value < f.start.value) return tell('The end date must be after the start date.');
       store.update((st) => Object.assign(st.challenge, { name: f.name.value.trim() || 'Winter Arc', start: f.start.value, end: f.end.value }));
       toast('Challenge saved');
       renderSettings();
@@ -649,8 +717,10 @@
   // ---------------- boot ----------------
   store.load();
   setupWorkoutDialog();
+  $$('.nav a[data-icon]').forEach((a) => a.insertAdjacentHTML('afterbegin', WA.icon(a.dataset.icon)));
+  $('#fab').innerHTML = WA.icon('plus');
   charts.installTooltips(document);
-  $('#fab').onclick = () => openWorkoutDialog({ date: location.hash.startsWith('#/today/') ? location.hash.split('/')[2] : D.today() });
+  $('#fab').onclick = () => openWorkoutDialog({ date: current.startsWith('#/today/') ? current.split('/')[2] : D.today() });
   route();
   reminders.start();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -53,7 +53,7 @@
         const cx = f.x(i), x0 = cx - bw / 2;
         // rounded top, square base
         const d = `M${x0},${base}V${top + r}Q${x0},${top} ${x0 + r},${top}H${x0 + bw - r}Q${x0 + bw},${top} ${x0 + bw},${top + r}V${base}Z`;
-        const met = opts.goal && p.y >= opts.goal ? ' met' : '';
+        const met = !opts.goal || p.y >= opts.goal ? ' met' : '';
         return `<g class="hit" data-tip="${esc(p.tip || `${p.label}: ${p.y}`)}"><rect x="${cx - bw / 2 - 3}" y="${f.T}" width="${bw + 6}" height="${base - f.T}" fill="transparent"/><path d="${d}" class="bar${met}"/></g>`;
       })
       .join('');
@@ -102,12 +102,49 @@
 
   /** Progress ring (stat, not a chart). */
   function ring(pct, label, sub) {
-    const r = 52, c = 2 * Math.PI * r;
-    return `<svg viewBox="0 0 128 128" class="ring" role="img" aria-label="${esc(label)}">
-      <circle cx="64" cy="64" r="${r}" class="ring-bg"/>
-      <circle cx="64" cy="64" r="${r}" class="ring-fg" stroke-dasharray="${(c * Math.min(1, pct)).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 64 64)"/>
-      <text x="64" y="62" text-anchor="middle" class="ring-big">${esc(label)}</text>
-      <text x="64" y="82" text-anchor="middle" class="ring-sub">${esc(sub || '')}</text></svg>`;
+    const r = 50, c = 2 * Math.PI * r;
+    const p = Math.max(0, Math.min(1, pct || 0));
+    return `<svg viewBox="0 0 120 120" class="ring ${p >= 1 ? 'full' : ''}" role="img" aria-label="${esc(label)} ${esc(sub || '')}">
+      <circle cx="60" cy="60" r="${r}" class="ring-bg"/>
+      <circle cx="60" cy="60" r="${r}" class="ring-fg" stroke-dasharray="${(c * p).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 60 60)"/>
+      <text x="60" y="62" text-anchor="middle" class="ring-big">${esc(label)}</text>
+      <text x="60" y="80" text-anchor="middle" class="ring-sub">${esc(sub || '')}</text></svg>`;
+  }
+
+  /** Small per-day ring used in the week strip. */
+  function miniRing(pct, label) {
+    const r = 15, c = 2 * Math.PI * r;
+    const p = Math.max(0, Math.min(1, pct || 0));
+    return `<svg viewBox="0 0 36 36" class="mini-ring ${p >= 1 ? 'full' : ''}" aria-hidden="true">
+      <circle cx="18" cy="18" r="${r}" class="ring-bg"/>
+      ${p ? `<circle cx="18" cy="18" r="${r}" class="ring-fg" stroke-dasharray="${(c * p).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 18 18)"/>` : ''}
+      <text x="18" y="22.5" text-anchor="middle" class="mini-num">${esc(label)}</text></svg>`;
+  }
+
+  /** The "arc": the whole challenge drawn as a rising arc, with a marker where you are today. */
+  function arc(start, end, on) {
+    const { diffDays, addDays, parse, fmt } = WA.date;
+    const total = diffDays(start, end) + 1;
+    const p = Math.max(0, Math.min(1, (diffDays(start, on) + 1) / total));
+    const W = 320, cx = 160, rx = 140, ry = 64, base = 78;
+    const pt = (q) => [cx - rx * Math.cos(Math.PI * q), base - ry * Math.sin(Math.PI * q)];
+    const path = `M${cx - rx},${base} A${rx},${ry} 0 0 1 ${cx + rx},${base}`;
+    const [mx, my] = pt(p);
+    // a tick at the first of each month inside the challenge
+    let ticks = '';
+    for (let d = start; d <= end; d = addDays(d, 1)) {
+      if (parse(d).getDate() !== 1 || d === start) continue;
+      const [tx, ty] = pt(diffDays(start, d) / (total - 1));
+      ticks += `<circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="2.2" class="arc-tick"/><text x="${tx.toFixed(1)}" y="${(ty - 9).toFixed(1)}" text-anchor="middle" class="arc-label">${fmt(d, { month: 'short' })}</text>`;
+    }
+    return `<svg viewBox="0 0 ${W} 96" class="arc" role="img" aria-label="${Math.round(p * 100)}% of the challenge done">
+      <path d="${path}" class="arc-bg"/>
+      ${p > 0 ? `<path d="M${cx - rx},${base} A${rx},${ry} 0 0 1 ${mx.toFixed(2)},${my.toFixed(2)}" class="arc-fg"/>` : ''}
+      ${ticks}
+      <text x="${cx - rx}" y="94" text-anchor="middle" class="arc-label">${fmt(start)}</text>
+      <text x="${cx + rx}" y="94" text-anchor="middle" class="arc-label">${fmt(end)}</text>
+      ${p > 0 ? `<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="9" class="arc-glow"/><circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="5" class="arc-dot"/>` : ''}
+    </svg>`;
   }
 
   // one shared tooltip for every chart on the page
@@ -128,5 +165,5 @@
     doc.addEventListener('scroll', () => (tip.style.opacity = 0), true);
   }
 
-  WA.charts = { bar, line, heatmap, ring, installTooltips, esc };
+  WA.charts = { bar, line, heatmap, ring, miniRing, arc, installTooltips, esc };
 })(typeof window !== 'undefined' ? window : globalThis);

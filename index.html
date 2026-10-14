@@ -5,29 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Winter Arc</title>
   <meta name="description" content="Track your Winter Arc challenge: daily habits, workouts, progress and health insights.">
-  <meta name="theme-color" content="#0b1220">
+  <meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Winter Arc">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400&family=Poppins:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
   <nav class="nav" aria-label="Main">
-    <div class="brand"><span aria-hidden="true">❄️</span> Winter Arc</div>
-    <a href="#/today"><span aria-hidden="true">☀️</span><span>Today</span></a>
-    <a href="#/workouts"><span aria-hidden="true">🏋️</span><span>Workouts</span></a>
-    <a href="#/progress"><span aria-hidden="true">📈</span><span>Progress</span></a>
-    <a href="#/insights"><span aria-hidden="true">💡</span><span>Insights</span></a>
-    <a href="#/health"><span aria-hidden="true">❤️</span><span>Health</span></a>
-    <a href="#/settings"><span aria-hidden="true">⚙️</span><span>Settings</span></a>
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Winter Arc</div>
+    <a href="#/today" data-icon="today"><span>Today</span></a>
+    <a href="#/workouts" data-icon="workouts"><span>Workouts</span></a>
+    <a href="#/progress" data-icon="progress"><span>Progress</span></a>
+    <a href="#/insights" data-icon="insights"><span>Insights</span></a>
+    <a href="#/health" data-icon="health"><span>Health</span></a>
+    <a href="#/settings" data-icon="settings"><span>Settings</span></a>
   </nav>
 
   <main id="view" tabindex="-1"></main>
 
-  <button id="fab" class="fab" aria-label="Log workout">+</button>
+  <button id="fab" class="fab" aria-label="Log workout"></button>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <dialog id="workout-dialog">
@@ -46,12 +50,21 @@
       <datalist id="types"></datalist>
       <div class="btn-row end">
         <button type="button" class="btn ghost" data-cancel>Cancel</button>
-        <button class="btn">Save</button>
+        <button class="btn">Save workout</button>
       </div>
     </form>
   </dialog>
 
+  <dialog id="confirm-dialog" class="confirm">
+    <p></p>
+    <div class="btn-row end">
+      <button type="button" class="btn ghost" data-cancel>Cancel</button>
+      <button type="button" class="btn" data-ok>OK</button>
+    </div>
+  </dialog>
+
   <script src="js/store.js"></script>
+  <script src="js/icons.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/health-import.js"></script>
   <script src="js/insights.js"></script>
