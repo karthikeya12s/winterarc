@@ -4,8 +4,8 @@ const assert = require('node:assert');
 const path = require('path');
 const zlib = require('zlib');
 const mem = {};
-globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => (mem[k] = v) };
-for (const f of ['store', 'charts', 'strength', 'health-import', 'insights', 'demo']) require(path.join(__dirname, '..', 'js', f + '.js'));
+globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => (mem[k] = v), removeItem: (k) => delete mem[k] };
+for (const f of ['store', 'charts', 'strength', 'focus', 'health-import', 'insights', 'demo']) require(path.join(__dirname, '..', 'js', f + '.js'));
 const WA = globalThis.WA;
 
 const XML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -145,4 +145,27 @@ test('insights: plan, PR, nutrition and goal-weight rules fire', () => {
   const s = WA.demo(WA.defaultState());
   const ids = WA.insights.generate(s).map((i) => i.id);
   for (const want of ['pr', 'goal-weight']) assert.ok(ids.includes(want), `${want} missing from ${ids}`);
+});
+
+test('90:90:1: required days, streaks, hit rate, timer', () => {
+  const s = WA.defaultState();
+  s.focus.mission = { title: 'Ship it', start: '2026-10-05', days: 90, minutes: 90, schedule: 'weekdays' }; // Mon
+  s.habits.push({ id: 'focus', name: 'Focus block', icon: '🎯', kind: 'check', auto: 'focus' });
+  WA.focus.logSession(s, '2026-10-05', 95, ['a']);
+  WA.focus.logSession(s, '2026-10-06', 60, []);
+  WA.focus.logSession(s, '2026-10-06', 30, ['b']); // adds up to 90
+  WA.focus.logSession(s, '2026-10-08', 100, []);
+  WA.focus.logSession(s, '2026-10-10', 40, []); // Saturday: optional
+  const st = WA.focus.stats(s, '2026-10-09'); // Friday, not yet done
+  assert.deepStrictEqual([st.dayNo, st.requiredSoFar, st.hit, st.missed, st.streak, st.best], [5, 5, 3, 1, 1, 2]);
+  assert.strictEqual(s.focus.sessions['2026-10-06'].taskIds.length, 1);
+  assert.strictEqual(WA.calc.habitDone(s, s.habits.find((h) => h.auto === 'focus'), '2026-10-06'), true);
+  assert.strictEqual(WA.calc.habitDone(s, s.habits.find((h) => h.auto === 'focus'), '2026-10-07'), false);
+  const cal = WA.focus.calendar(s, '2026-10-09');
+  assert.deepStrictEqual(cal.slice(0, 7).map((c) => c.state), ['hit', 'hit', 'miss', 'hit', 'today', 'hit', 'off']);
+  assert.strictEqual(cal.length, 90);
+  WA.focus.startTimer(['a']);
+  assert.ok(WA.focus.timer());
+  const r = WA.focus.stopTimer();
+  assert.deepStrictEqual([r.minutes, r.taskIds, WA.focus.timer()], [1, ['a'], null]);
 });

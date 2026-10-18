@@ -88,6 +88,23 @@
       }
     }
 
+    // --- 90:90:1 ---
+    if (WA.focus && WA.focus.hasMission(s)) {
+      const fs = WA.focus.stats(s, t);
+      const m = WA.focus.get(s).mission;
+      if (fs.started && !fs.ended) {
+        const hour = new Date().getHours();
+        if (fs.todayRequired && !fs.todayDone && hour >= 10)
+          add('focus-today', 'warn', fs.todayMinutes ? `${m.minutes - fs.todayMinutes} min left on today's 90:90:1 block` : `Today's 90:90:1 block hasn't started`, `${m.title}: ${fs.streak ? `${fs.streak}-day streak on the line.` : 'the first block is the hardest one.'}`);
+        else if (fs.todayDone) add('focus-done', 'good', `90:90:1 block done — day ${fs.dayNo} of ${fs.total}`, `${fs.hit} of ${fs.requiredSoFar} blocks hit, ${fs.hours} h banked on ${m.title}.`);
+        if (fs.streak >= 5 && fs.todayDone) add('focus-streak', 'good', `${fs.streak} focus blocks in a row`, `Best run so far: ${fs.best}. Protect the morning.`);
+        if (fs.missed >= 2 && fs.rate < 0.7) add('focus-slipping', 'warn', `Missed ${fs.missed} focus blocks so far`, `${Math.round(fs.rate * 100)}% hit rate. The rule only works when the block is non-negotiable: same time, phone away, door shut.`);
+        if (fs.dayNo === 45) add('focus-half', 'info', 'Halfway through the 90 days', `${fs.hours} h on ${m.title} so far. Re-read your "why" on the 90:90:1 page.`);
+        const stale = WA.focus.get(s).tasks.filter((x) => x.progress > 0 && x.progress < 100 && x.updatedAt && WA.date.diffDays(x.updatedAt, t) >= 10);
+        if (stale.length) add('focus-task-stale', 'info', `"${stale[0].title}" hasn't moved in ${WA.date.diffDays(stale[0].updatedAt, t)} days`, 'Either break it into a smaller next step or drop it from the mission.');
+      } else if (fs.ended) add('focus-complete', 'good', `90:90:1 complete: ${fs.hit}/${fs.totalRequired} blocks, ${fs.hours} h`, `${m.title}. Start the next 90 on the 90:90:1 page.`);
+    }
+
     // --- Sunday review nudge ---
     const dow = parse(t).getDay();
     const thisWeekKey = weekStart(t);

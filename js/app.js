@@ -1,6 +1,6 @@
 /* Winter Arc — UI: router + views. */
 (function () {
-  const { store, date: D, calc, charts, health, insights, reminders, strength } = WA;
+  const { store, date: D, calc, charts, health, insights, reminders, strength, focus } = WA;
   const esc = charts.esc;
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
@@ -124,7 +124,7 @@
   }
 
   // ---------------- router ----------------
-  const routes = { today: renderToday, workouts: renderWorkouts, progress: renderProgress, review: renderReview, insights: renderInsights, health: renderHealth, settings: renderSettings };
+  const routes = { today: renderToday, focus: renderFocus, workouts: renderWorkouts, progress: renderProgress, review: renderReview, insights: renderInsights, health: renderHealth, settings: renderSettings };
   let current = location.hash || '#/today';
   function go(h) {
     current = h;
@@ -135,6 +135,7 @@
     window.scrollTo(0, 0);
   }
   function route() {
+    clearInterval(focusTick);
     const [, name = 'today', arg] = current.split('/');
     const fn = routes[name] || renderToday;
     $$('.nav a').forEach((a) => a.classList.toggle('active', a.getAttribute('href') === `#/${name}`));
@@ -313,6 +314,7 @@
     </div>
 
     <div class="col" data-tab="Log">
+    ${focusCard(s, day)}
     <section class="card grow">
       <div class="card-head"><h2>Workouts</h2><button class="btn small ghost" data-add-workout>Full log…</button></div>
       ${ws.length ? `<ul class="list">${ws.map((w) => workoutRow(w, strength.prsOn(s, w.date))).join('')}</ul>` : ''}
@@ -364,8 +366,10 @@
       if (e.target.closest('[data-add-workout]')) return openWorkoutDialog({ date: day });
       const q = e.target.closest('[data-quick]');
       if (q) return logQuick(q.dataset.quick, day);
+      if (handleFocusClick(e, day, () => renderToday(day))) return;
       handleWorkoutRowClick(e, () => renderToday(day));
     };
+    startFocusTick();
     view.onchange = (e) => {
       const el = e.target;
       if (el.dataset.value) {
@@ -704,6 +708,13 @@
     if (steps) lines.push(`👟 ${Math.round(steps).toLocaleString()} steps/day`);
     if (sleep) lines.push(`🌙 ${sleep.toFixed(1)} h sleep/night`);
     if (prs.length) lines.push(`🏆 PRs: ${prs.join(', ')}`);
+    if (focus.hasMission(s)) {
+      const m = focus.get(s).mission;
+      const req = days.filter((d) => focus.isRequired(m, d));
+      const hit = req.filter((d) => focus.doneOn(s, d)).length;
+      const mins = days.reduce((a, d) => a + focus.minutesOn(s, d), 0);
+      if (req.length || mins) lines.push(`🎯 90:90:1 "${m.title}": ${hit}/${req.length} blocks · ${(mins / 60).toFixed(1)} h`);
+    }
     return lines.join('\n');
   }
 
@@ -755,7 +766,16 @@
       <div class="tile"><span class="stat-num">${pct(score)}</span><span class="stat-label">habits ${prevScore != null ? `· prev ${pct(prevScore)}` : ''}</span></div>
       <div class="tile"><span class="stat-num">${ws.length}</span><span class="stat-label">workouts · ${mins} min</span></div>
       <div class="tile"><span class="stat-num">${sleep ? sleep.toFixed(1) + '<small>h</small>' : '—'}</span><span class="stat-label">avg sleep</span></div>
-      <div class="tile"><span class="stat-num">${wDelta == null ? '—' : (wDelta > 0 ? '+' : '') + wDelta.toFixed(1) + '<small>kg</small>'}</span><span class="stat-label">weight change</span></div>
+      ${
+        focus.hasMission(s)
+          ? (() => {
+              const m = focus.get(s).mission;
+              const req = D.range(wk, end).filter((d) => d <= t && focus.isRequired(m, d));
+              const hit = req.filter((d) => focus.doneOn(s, d)).length;
+              return `<div class="tile"><span class="stat-num">${hit}/${req.length}</span><span class="stat-label">90:90:1 blocks</span></div>`;
+            })()
+          : `<div class="tile"><span class="stat-num">${wDelta == null ? '—' : (wDelta > 0 ? '+' : '') + wDelta.toFixed(1) + '<small>kg</small>'}</span><span class="stat-label">weight change</span></div>`
+      }
     </section>
 
     <section class="card grow">
@@ -1164,6 +1184,248 @@
       store.update((st) => Object.assign(st.challenge, { name: f.name.value.trim() || 'Winter Arc', start: f.start.value, end: f.end.value }));
       toast('Challenge saved');
       renderSettings();
+    };
+  }
+
+  // ---------------- 90:90:1 ----------------
+  let focusTick = null;
+  let focusPick = new Set(); // tasks selected for the next session
+  const fmtClock = (ms) => {
+    const sec = Math.max(0, Math.floor(ms / 1000));
+    return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+  };
+  function startFocusTick() {
+    clearInterval(focusTick);
+    if (!focus.timer()) return;
+    const tick = () => {
+      const el = $('#ftimer');
+      const tm = focus.timer();
+      if (!el || !tm) return clearInterval(focusTick);
+      el.textContent = fmtClock(Date.now() - tm.startedAt);
+      const target = (focus.get(store.get()).mission || {}).minutes || 90;
+      const bar = $('#fbar');
+      if (bar) bar.style.width = `${Math.min(100, ((focus.minutesOn(store.get(), D.today()) + (Date.now() - tm.startedAt) / 60000) / target) * 100)}%`;
+    };
+    tick();
+    focusTick = setInterval(tick, 1000);
+  }
+  const taskChip = (x, sel) => `<button type="button" class="chip task-chip ${sel ? 'on' : ''}" data-pick="${x.id}">${esc(x.title)}<small>${x.progress || 0}%</small></button>`;
+
+  /** The daily block card shown on Today. */
+  function focusCard(s, day) {
+    if (!focus.hasMission(s)) return `<a href="#/focus" class="plan-banner focus-banner">${WA.icon('focus')}<span>Start a <b>90:90:1</b> mission: 90 days, first 90 minutes, one thing.</span></a>`;
+    const f = focus.get(s);
+    const m = f.mission;
+    const t = D.today();
+    const st = focus.stats(s, day);
+    if (!st.started) return `<a href="#/focus" class="plan-banner focus-banner">${WA.icon('focus')}<span><b>90:90:1</b> starts ${D.fmt(m.start)}: ${esc(m.title)}</span></a>`;
+    if (st.ended) return '';
+    const sess = f.sessions[day] || { minutes: 0, taskIds: [] };
+    const tm = day === t ? focus.timer() : null;
+    const open = f.tasks.filter((x) => (x.progress || 0) < 100);
+    const required = focus.isRequired(m, day);
+    const done = sess.minutes >= m.minutes;
+    const pct = Math.min(100, (sess.minutes / m.minutes) * 100);
+    return `<section class="card focus-card ${done ? 'done' : ''}">
+      <div class="card-head"><h2>${WA.icon('focus')} 90:90:1 · Day ${st.dayNo}</h2><a href="#/focus" class="link">${esc(m.title)}</a></div>
+      <div class="fbar"><span id="fbar" style="width:${pct}%"></span></div>
+      <div class="focus-row">
+        <div class="focus-num"><span class="stat-num">${sess.minutes}<small>/${m.minutes} min</small></span><span class="stat-label">${done ? 'block done ✓' : required ? 'today\'s block' : 'rest day · optional'}</span></div>
+        ${
+          tm
+            ? `<div class="focus-timer"><span id="ftimer" class="clock">00:00</span><button class="btn" data-fstop>${WA.icon('stop')} Stop & log</button></div>`
+            : day === t
+              ? `<div class="focus-timer"><button class="btn" data-fstart>${WA.icon('play')} Start block</button><span class="focus-manual"><input type="number" inputmode="numeric" min="1" max="600" placeholder="min" id="fmin" aria-label="Minutes"><button class="btn small ghost" data-flog>Log</button></span></div>`
+              : `<div class="focus-timer"><span class="focus-manual"><input type="number" inputmode="numeric" min="1" max="600" placeholder="min" id="fmin" aria-label="Minutes"><button class="btn small ghost" data-flog>Log</button></span></div>`
+        }
+      </div>
+      ${open.length && !tm ? `<div class="chips">${open.slice(0, 6).map((x) => taskChip(x, focusPick.has(x.id))).join('')}</div><p class="muted small">Tap the task(s) you'll work on, then start.</p>` : ''}
+      ${tm && tm.taskIds.length ? `<p class="muted small">Working on: ${tm.taskIds.map((id) => esc((f.tasks.find((x) => x.id === id) || {}).title || '')).filter(Boolean).join(', ')}</p>` : ''}
+      ${sess.taskIds && sess.taskIds.length ? `<p class="muted small">Logged today: ${sess.taskIds.map((id) => esc((f.tasks.find((x) => x.id === id) || {}).title || '')).filter(Boolean).join(', ')}</p>` : ''}
+    </section>`;
+  }
+  /** Shared click handling for the focus card (Today + Focus page). Returns true if handled. */
+  function handleFocusClick(e, day, rerender) {
+    const pick = e.target.closest('[data-pick]');
+    if (pick) {
+      focusPick.has(pick.dataset.pick) ? focusPick.delete(pick.dataset.pick) : focusPick.add(pick.dataset.pick);
+      pick.classList.toggle('on');
+      return true;
+    }
+    if (e.target.closest('[data-fstart]')) {
+      focus.startTimer([...focusPick]);
+      toast('Block started. Phone away, door shut.');
+      rerender();
+      return true;
+    }
+    if (e.target.closest('[data-fstop]')) {
+      const r = focus.stopTimer();
+      if (r) {
+        let sess;
+        store.update((st) => (sess = focus.logSession(st, D.today(), r.minutes, r.taskIds)));
+        const m = focus.get(store.get()).mission;
+        toast(sess.minutes >= m.minutes ? `${r.minutes} min logged — block done 🎯` : `${r.minutes} min logged · ${m.minutes - sess.minutes} to go`);
+      }
+      focusPick = new Set();
+      rerender();
+      return true;
+    }
+    if (e.target.closest('[data-flog]')) {
+      const inp = $('#fmin');
+      const mins = parseInt(inp && inp.value, 10);
+      if (!mins) return (inp && inp.focus(), true);
+      store.update((st) => focus.logSession(st, day, mins, [...focusPick]));
+      focusPick = new Set();
+      toast(`${mins} min logged`);
+      rerender();
+      return true;
+    }
+    return false;
+  }
+
+  function renderFocus(arg) {
+    const saved = saveScroll();
+    const s = store.get();
+    const t = D.today();
+    const f = focus.get(s);
+    const m = f.mission;
+    const editing = arg === 'edit' || !focus.hasMission(s);
+
+    if (editing) {
+      const d = m || { title: '', why: '', start: t, days: 90, minutes: 90, blockTime: '07:00', schedule: 'weekdays' };
+      view.innerHTML = `
+      <header class="page-head"><div><span class="eyebrow">90 days · 90 minutes · 1 thing</span><h1>${m ? 'Edit mission' : 'Start your 90:90:1'}</h1></div></header>
+      <div class="page-body layout-insights">
+      <div class="col" data-tab="Mission">
+      <section class="card grow">
+        <form id="mission">
+          <label>The one thing<input name="title" value="${esc(d.title)}" placeholder="e.g. Ship the iOS app · Pass the CFA · Launch the newsletter" required maxlength="80"></label>
+          <label>Why it matters<textarea name="why" rows="2" placeholder="The sentence you'll re-read on day 40 when it gets boring.">${esc(d.why || '')}</textarea></label>
+          <div class="form-grid">
+            <label>Start<input type="date" name="start" value="${d.start}" required></label>
+            <label>Days<input type="number" name="days" value="${d.days}" min="7" max="365" required></label>
+            <label>Block <small>min</small><input type="number" name="minutes" value="${d.minutes}" min="15" max="480" required></label>
+            <label>Block starts<input type="time" name="blockTime" value="${d.blockTime || '07:00'}"></label>
+          </div>
+          <label>Days that count<select name="schedule"><option value="weekdays" ${d.schedule === 'weekdays' ? 'selected' : ''}>Weekdays (Mon–Fri)</option><option value="daily" ${d.schedule === 'daily' ? 'selected' : ''}>Every day</option></select></label>
+          <div class="btn-row"><button class="btn">${m ? 'Save' : 'Start the 90 days'}</button>${m ? '<a class="btn ghost" href="#/focus">Cancel</a>' : ''}</div>
+        </form>
+      </section>
+      </div>
+      <div class="col" data-tab="The rule">
+      <section class="card grow rule-card">
+        <h2>The 90:90:1 rule</h2>
+        <p>For the next <b>90 days</b>, give the <b>first 90 minutes</b> of your workday to the <b>one</b> project that would change everything if you finished it. Before email, before messages, before anything else.</p>
+        <p>Why it works: willpower is highest in the morning, 90 minutes is long enough for real work, and 90 days of the same block compounds into roughly 135 hours on one thing.</p>
+        <p class="muted small">Popularised by Robin Sharma. This app tracks the blocks, the streak, the hours and the tasks that move the mission.</p>
+      </section>
+      </div>
+      </div>`;
+      finishRender('focus', saved);
+      $('#mission').onsubmit = (e) => {
+        e.preventDefault();
+        const el = e.target.elements;
+        store.update((st) => {
+          const ff = focus.get(st);
+          ff.mission = { ...(ff.mission || { createdAt: t }), title: el.title.value.trim(), why: el.why.value.trim(), start: el.start.value, days: +el.days.value || 90, minutes: +el.minutes.value || 90, blockTime: el.blockTime.value || '07:00', schedule: el.schedule.value };
+          if (!st.habits.some((h) => h.auto === 'focus')) st.habits.unshift({ id: 'focus', name: 'Focus block', icon: '🎯', kind: 'check', auto: 'focus' });
+        });
+        toast(m ? 'Mission saved' : 'Mission set. Day 1 is ' + D.fmt(el.start.value));
+        go('#/focus');
+      };
+      view.onclick = null;
+      return;
+    }
+
+    const st = focus.stats(s, t);
+    const cal = focus.calendar(s, t);
+    const open = f.tasks.filter((x) => (x.progress || 0) < 100).sort((a, b) => (b.progress || 0) - (a.progress || 0));
+    const done = f.tasks.filter((x) => (x.progress || 0) >= 100).sort((a, b) => (a.doneAt < b.doneAt ? 1 : -1));
+    const sessions = Object.entries(f.sessions).filter(([, v]) => v.minutes).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 14);
+    const taskName = (id) => (f.tasks.find((x) => x.id === id) || {}).title || '';
+    const taskRow = (x) => `<li class="ftask ${x.progress >= 100 ? 'done' : ''}" data-task="${x.id}">
+        <button class="check ${x.progress >= 100 ? '' : ''}" data-tdone aria-label="Mark done">${WA.icon('check')}</button>
+        <div class="ftask-main"><span class="ftask-title">${esc(x.title)}</span>
+          <span class="bar-mini"><span style="width:${x.progress || 0}%"></span></span>
+          <span class="muted small">${x.progress >= 100 ? `Done ${D.fmt(x.doneAt)}` : `${x.progress || 0}%${x.updatedAt ? ` · updated ${D.fmt(x.updatedAt)}` : ''}`}</span></div>
+        ${x.progress >= 100 ? '' : `<span class="stepper small"><button class="step" data-tstep="-10" aria-label="Less">−</button><button class="step" data-tstep="10" aria-label="More">+</button></span>`}
+        <button class="icon-btn small" data-tdel aria-label="Delete task">✕</button></li>`;
+
+    view.innerHTML = `
+    <header class="page-head"><div><span class="eyebrow">90:90:1</span><h1>${esc(m.title)}</h1></div>
+      <div class="btn-row"><button class="icon-btn" id="fshare" aria-label="Share" title="Share">${WA.icon('share')}</button><a class="btn small ghost" href="#/focus/edit">Edit</a></div></header>
+    <div class="page-body layout-focus">
+    <div class="col" data-tab="Journey">
+      <section class="hero focus-hero">
+        <div class="hero-top">
+          <div class="hero-title"><span class="eyebrow">${st.started ? (st.ended ? 'Complete' : `${D.fmt(m.start)} → ${D.fmt(st.end)}`) : `Starts ${D.fmt(m.start)}`}</span>
+            <div class="hero-day"><span class="hero-num">${st.started ? st.dayNo : D.diffDays(t, m.start)}</span><span class="hero-of">${st.started ? `of ${st.total}<br>days` : 'days<br>to go'}</span></div></div>
+          ${charts.ring(st.requiredSoFar ? st.hit / st.requiredSoFar : 0, st.requiredSoFar ? `${Math.round((st.hit / st.requiredSoFar) * 100)}%` : '—', 'blocks hit')}
+        </div>
+        <div class="hero-stats">
+          <div class="stat"><span class="stat-num">${st.streak}</span><span class="stat-label">block streak · best ${st.best}</span></div>
+          <div class="stat"><span class="stat-num">${st.hit}<small>/${st.requiredSoFar}</small></span><span class="stat-label">blocks hit</span></div>
+          <div class="stat"><span class="stat-num">${st.hours}<small>h</small></span><span class="stat-label">on the mission</span></div>
+        </div>
+      </section>
+      ${st.started && !st.ended ? focusCard(s, t) : ''}
+      <section class="card grow">
+        <div class="card-head"><h2>${st.total} days</h2><span class="legend"><span class="hm-key f-hit"></span>hit <span class="hm-key f-partial"></span>partial <span class="hm-key f-miss"></span>missed <span class="hm-key f-off"></span>rest</span></div>
+        <div class="fgrid">${cal.map((c) => `<a href="#/today/${c.date}" class="fcell ${c.state} ${c.date > t ? 'disabled' : ''}" data-tip="${D.fmt(c.date, { weekday: 'short', month: 'short', day: 'numeric' })}: ${c.minutes ? c.minutes + ' min' : c.state === 'off' ? 'rest day' : c.state === 'future' ? 'upcoming' : 'missed'}" aria-label="${D.fmt(c.date)}"></a>`).join('')}</div>
+        ${m.why ? `<p class="why">“${esc(m.why)}”</p>` : ''}
+      </section>
+    </div>
+
+    <div class="col" data-tab="Tasks">
+      <section class="card grow">
+        <div class="card-head"><h2>Tasks</h2><span class="muted small">${st.tasksDone}/${st.taskCount} done · ${st.taskProgress}% overall</span></div>
+        <form id="addtask" class="addtask"><input name="title" placeholder="Next task that moves the mission…" maxlength="100" required autocomplete="off"><button class="btn small">Add</button></form>
+        <ul class="ftasks">${open.map(taskRow).join('')}${open.length ? '' : '<li class="muted small">No open tasks. Add the next concrete step.</li>'}</ul>
+        ${done.length ? `<h3 class="week-head">Done</h3><ul class="ftasks">${done.map(taskRow).join('')}</ul>` : ''}
+      </section>
+    </div>
+
+    <div class="col" data-tab="Log">
+      <section class="card grow">
+        <h2>Session log</h2>
+        ${
+          sessions.length
+            ? `<ul class="list">${sessions.map(([d, v]) => `<li class="row"><div class="row-date">${D.fmt(d, { weekday: 'short', day: 'numeric' })}</div><div class="row-main"><strong>${v.minutes} min</strong> ${v.minutes >= m.minutes ? '<span class="badge pr">hit</span>' : ''}<div class="muted small">${(v.taskIds || []).map(taskName).filter(Boolean).map(esc).join(' · ') || '—'}</div>${v.note ? `<div class="muted small">${esc(v.note)}</div>` : ''}</div></li>`).join('')}</ul>`
+            : '<p class="muted">No blocks logged yet. Start the timer on Today.</p>'
+        }
+      </section>
+    </div>
+    </div>`;
+    finishRender('focus', saved);
+    startFocusTick();
+
+    $('#addtask').onsubmit = (e) => {
+      e.preventDefault();
+      const title = e.target.elements.title.value.trim();
+      if (!title) return;
+      store.update((st) => focus.get(st).tasks.push({ id: WA.uid(), title, progress: 0, createdAt: t }));
+      renderFocus();
+      $('#addtask input').focus();
+    };
+    view.onclick = (e) => {
+      if (handleFocusClick(e, t, renderFocus)) return;
+      if (e.target.closest('#fshare')) {
+        const txt = `🎯 90:90:1 — ${m.title}\nDay ${st.dayNo}/${st.total} · ${st.hit}/${st.requiredSoFar} blocks hit · ${st.streak}-day streak · ${st.hours} h in\nTasks: ${st.tasksDone}/${st.taskCount} done (${st.taskProgress}%)`;
+        return shareText(`90:90:1 — ${m.title}`, txt);
+      }
+      const row = e.target.closest('[data-task]');
+      if (!row) return;
+      const id = row.dataset.task;
+      const edit = (fn) => {
+        store.update((st) => {
+          const x = focus.get(st).tasks.find((y) => y.id === id);
+          x && fn(x);
+        });
+        renderFocus();
+      };
+      if (e.target.closest('[data-tstep]')) edit((x) => ((x.progress = Math.max(0, Math.min(100, (x.progress || 0) + +e.target.closest('[data-tstep]').dataset.tstep))), (x.updatedAt = t), x.progress >= 100 && (x.doneAt = x.doneAt || t)));
+      else if (e.target.closest('[data-tdone]')) edit((x) => (x.progress >= 100 ? ((x.progress = 90), (x.doneAt = null)) : ((x.progress = 100), (x.doneAt = t)), (x.updatedAt = t)));
+      else if (e.target.closest('[data-tdel]')) ask(`Delete "${taskName(id)}"?`, { ok: 'Delete', danger: true }).then((y) => y && (store.update((st) => (focus.get(st).tasks = focus.get(st).tasks.filter((x) => x.id !== id))), renderFocus()));
     };
   }
 

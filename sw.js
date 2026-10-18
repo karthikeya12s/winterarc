@@ -1,8 +1,8 @@
 /* Offline support, network-first: always fetch fresh code when online, fall back to the cache offline. */
-const CACHE = 'winterarc-v5';
+const CACHE = 'winterarc-v6';
 const ASSETS = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest', 'icons/icon.svg',
-  'js/store.js', 'js/icons.js', 'js/charts.js', 'js/strength.js', 'js/health-import.js', 'js/insights.js', 'js/reminders.js', 'js/demo.js', 'js/app.js',
+  'js/store.js', 'js/icons.js', 'js/charts.js', 'js/strength.js', 'js/focus.js', 'js/health-import.js', 'js/insights.js', 'js/reminders.js', 'js/demo.js', 'js/app.js',
 ];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

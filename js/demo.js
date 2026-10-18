@@ -53,6 +53,26 @@
     const thisWeek = D.weekStart(t), lastWeek = D.addDays(thisWeek, -7);
     s.reviews[lastWeek] = { done: true, doneAt: D.addDays(thisWeek, -1), worked: 'Training straight after work — no detour home first.', change: 'Phone charges in the kitchen, not the bedroom.' };
     s.plans[thisWeek] = { focus: 'sleep', types: { Mon: 'Strength', Tue: 'Run', Wed: 'Strength', Fri: 'Strength', Sat: 'HIIT' }, note: 'Deload squats if knees complain.' };
+    const fStart = D.addDays(t, -23);
+    s.focus = {
+      mission: { title: 'Ship the Winter Arc iOS app', why: 'Automatic Health sync and real notifications — the two things the web app can never do.', start: fStart, days: 90, minutes: 90, blockTime: '06:30', schedule: 'weekdays', createdAt: fStart },
+      tasks: [
+        { id: 'f1', title: 'Learn SwiftUI basics (3 tutorials)', progress: 100, doneAt: D.addDays(t, -14), createdAt: fStart, updatedAt: D.addDays(t, -14) },
+        { id: 'f2', title: 'HealthKit read: steps, sleep, HR', progress: 70, createdAt: fStart, updatedAt: D.addDays(t, -2) },
+        { id: 'f3', title: 'Port habit model + storage', progress: 40, createdAt: fStart, updatedAt: D.addDays(t, -1) },
+        { id: 'f4', title: 'Local notifications', progress: 0, createdAt: D.addDays(t, -10) },
+        { id: 'f5', title: 'TestFlight build to my phone', progress: 0, createdAt: D.addDays(t, -10) },
+      ],
+      sessions: {},
+    };
+    for (const d of D.range(fStart, D.addDays(t, -1))) {
+      const dow = D.parse(d).getDay();
+      if (dow === 0 || dow === 6) continue;
+      const r = rnd();
+      if (r < 0.15) continue;
+      s.focus.sessions[d] = { minutes: r < 0.3 ? 45 + Math.round(rnd() * 30) : 90 + Math.round(rnd() * 20), taskIds: [['f1', 'f2', 'f3'][Math.floor(rnd() * 3)]], note: '' };
+    }
+    s.habits.push({ id: 'focus', name: 'Focus block', icon: '🎯', kind: 'check', auto: 'focus' });
     return s;
   };
 })(typeof window !== 'undefined' ? window : globalThis);
