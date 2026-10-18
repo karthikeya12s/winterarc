@@ -1,8 +1,11 @@
 /* Winter Arc — 90:90:1 — for 90 days, the first 90 minutes of the day go to 1 mission.
  * Data lives in state.focus:
- *   mission: { title, why, start, days, minutes, blockTime, schedule: 'weekdays'|'daily', createdAt }
+ *   mission: { title, why, start, days, minutes, blockTime, schedule: 'weekdays'|'daily', createdAt,
+ *              segments: [{ id, name, minutes, source: 'manual'|'workouts' }] }   // the block split into parts
  *   tasks:   [{ id, title, progress 0..100, doneAt, createdAt }]
- *   sessions:{ date: { minutes, taskIds: [], note } }
+ *   sessions:{ date: { minutes, segments: { segId: minutes }, taskIds: [], note } }
+ * A segment with source 'workouts' is also credited with the workout minutes logged that day.
+ * Top-3 lists live in state.days[date].top3 = [{ text, done }].
  * A running timer is kept in localStorage separately so it survives reloads. */
 (function (root) {
   const WA = (root.WA = root.WA || {});
@@ -22,8 +25,17 @@
     }
     return true;
   };
-  const minutesOn = (s, date) => ((get(s).sessions[date] || {}).minutes || 0);
-  const doneOn = (s, date) => hasMission(s) && minutesOn(s, date) >= (get(s).mission.minutes || 90);
+  const segments = (m) => (m && m.segments && m.segments.length ? m.segments : m ? [{ id: 'main', name: 'Focus block', minutes: m.minutes || 90, source: 'manual' }] : []);
+  const workoutMinutes = (s, date) => (s.workouts || []).filter((w) => w.date === date).reduce((a, w) => a + (+w.duration || 0), 0);
+  function segmentMinutes(s, date, seg) {
+    const sess = get(s).sessions[date] || {};
+    const logged = sess.segments ? sess.segments[seg.id] || 0 : seg.id === 'main' ? sess.minutes || 0 : 0;
+    return logged + (seg.source === 'workouts' ? workoutMinutes(s, date) : 0);
+  }
+  const targetMinutes = (m) => segments(m).reduce((a, x) => a + (+x.minutes || 0), 0);
+  const minutesOn = (s, date) => (hasMission(s) ? segments(get(s).mission).reduce((a, seg) => a + segmentMinutes(s, date, seg), 0) : 0);
+  const doneOn = (s, date) => hasMission(s) && segments(get(s).mission).every((seg) => segmentMinutes(s, date, seg) >= (+seg.minutes || 0));
+  const top3 = (s, date) => ((s.days && s.days[date] && s.days[date].top3) || []).filter((x) => x && x.text);
 
   /** Headline numbers up to `on` (today by default). */
   function stats(s, on) {
@@ -38,7 +50,7 @@
     const required = elapsed.filter((d) => isRequired(m, d));
     const requiredBeforeToday = required.filter((d) => d < t);
     const hit = required.filter((d) => doneOn(s, d));
-    const minutes = Object.entries(f.sessions).filter(([d]) => d >= m.start && d <= end).reduce((a, [, v]) => a + (v.minutes || 0), 0);
+    const minutes = D().range(m.start, t < end ? t : end).reduce((a, d) => a + minutesOn(s, d), 0);
     // streak: consecutive required days hit, ending today (if hit) or yesterday
     let streak = 0, best = 0, run = 0;
     for (const d of required) {
@@ -80,10 +92,14 @@
     });
   }
 
-  function logSession(s, date, minutes, taskIds, note) {
+  function logSession(s, date, minutes, taskIds, note, segId) {
     const f = get(s);
     const cur = f.sessions[date] || { minutes: 0, taskIds: [], note: '' };
-    cur.minutes = Math.max(0, Math.round((cur.minutes || 0) + minutes));
+    const segs = segments(f.mission);
+    const id = segId || (segs[0] && segs[0].id) || 'main';
+    cur.segments = cur.segments || {};
+    cur.segments[id] = Math.max(0, Math.round((cur.segments[id] || 0) + minutes));
+    cur.minutes = Object.values(cur.segments).reduce((a, v) => a + v, 0);
     cur.taskIds = [...new Set([...(cur.taskIds || []), ...(taskIds || [])])];
     if (note) cur.note = cur.note ? `${cur.note}\n${note}` : note;
     f.sessions[date] = cur;
@@ -99,8 +115,8 @@
       return null;
     }
   }
-  function startTimer(taskIds) {
-    const t = { startedAt: Date.now(), taskIds: taskIds || [] };
+  function startTimer(taskIds, segId) {
+    const t = { startedAt: Date.now(), taskIds: taskIds || [], segId: segId || null };
     try {
       root.localStorage.setItem(TIMER_KEY, JSON.stringify(t));
     } catch (e) {}
@@ -112,12 +128,12 @@
       root.localStorage.removeItem(TIMER_KEY);
     } catch (e) {}
     if (!t) return null;
-    return { minutes: Math.max(1, Math.round((Date.now() - t.startedAt) / 60000)), taskIds: t.taskIds, startedAt: t.startedAt };
+    return { minutes: Math.max(1, Math.round((Date.now() - t.startedAt) / 60000)), taskIds: t.taskIds, segId: t.segId, startedAt: t.startedAt };
   }
   const elapsedMinutes = () => {
     const t = timer();
     return t ? Math.floor((Date.now() - t.startedAt) / 60000) : 0;
   };
 
-  WA.focus = { get, hasMission, stats, calendar, logSession, isRequired, endDate, doneOn, minutesOn, timer, startTimer, stopTimer, elapsedMinutes };
+  WA.focus = { get, hasMission, stats, calendar, logSession, isRequired, endDate, doneOn, minutesOn, segments, segmentMinutes, targetMinutes, top3, timer, startTimer, stopTimer, elapsedMinutes };
 })(typeof window !== 'undefined' ? window : globalThis);

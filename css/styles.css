@@ -637,3 +637,27 @@ dialog .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ftask .bar-mini { max-width: none; }
 .stepper.small .step { width: 34px; height: 34px; font-size: 1.1rem; }
 .rule-card p { margin: 0 0 12px; }
+
+/* segments + top 3 */
+.fsegs { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.fseg { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); flex-wrap: wrap; }
+.fseg.done { background: var(--green-soft); }
+.fseg.running { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.fseg-main { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 4px; }
+.fseg-name { font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; display: flex; align-items: center; gap: 6px; }
+.fseg-name .ico { width: 16px; height: 16px; color: var(--green); stroke-width: 3; }
+.fseg .bar-mini { max-width: none; background: var(--surface); }
+.fseg.done .bar-mini span { background: var(--green); }
+.fseg-ctl { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.fseg .clock { font-size: 1.4rem; }
+.focus-card .focus-row { margin-bottom: 2px; }
+.top3 { margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); display: grid; gap: 6px; }
+.top3-head { display: flex; justify-content: space-between; font-family: var(--font-display); font-weight: 600; font-size: 0.9rem; }
+.top3-row { display: grid; grid-template-columns: 22px 22px 1fr; align-items: center; gap: 8px; margin: 0; }
+.top3-row input[type='checkbox'] { width: 20px; height: 20px; min-height: 0; margin: 0; accent-color: var(--green); }
+.top3-row input[type='text'] { min-height: 38px; padding: 6px 10px; background: var(--surface); font-family: var(--font-body); }
+.top3-row.done input[type='text'] { text-decoration: line-through; color: var(--muted); }
+.top3-n { font-family: var(--font-display); font-weight: 600; color: var(--muted); font-size: 0.8rem; text-align: center; }
+.seg-list { display: grid; gap: 6px; margin-bottom: 8px; }
+.seg-row { display: grid; grid-template-columns: minmax(0, 2fr) 70px minmax(0, 1.4fr) 32px; gap: 6px; align-items: center; }
+.seg-row input, .seg-row select { min-height: 40px; padding: 6px 8px; font-size: 0.9rem; }

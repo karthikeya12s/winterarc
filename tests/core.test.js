@@ -169,3 +169,21 @@ test('90:90:1: required days, streaks, hit rate, timer', () => {
   const r = WA.focus.stopTimer();
   assert.deepStrictEqual([r.minutes, r.taskIds, WA.focus.timer()], [1, ['a'], null]);
 });
+
+test('90:90:1 segments: workouts credit the fitness segment; both segments needed', () => {
+  const s = WA.defaultState();
+  s.focus.mission = { title: 'Better', start: '2026-10-05', days: 90, schedule: 'daily', segments: [{ id: 'fit', name: 'Fitness', minutes: 60, source: 'workouts' }, { id: 'top3', name: 'Top 3', minutes: 30, source: 'manual' }] };
+  assert.strictEqual(WA.focus.targetMinutes(s.focus.mission), 90);
+  s.workouts.push({ id: 'w', date: '2026-10-06', type: 'Run', duration: 45 });
+  WA.focus.logSession(s, '2026-10-06', 20, [], '', 'fit'); // 45 + 20 = 65 ≥ 60
+  assert.strictEqual(WA.focus.segmentMinutes(s, '2026-10-06', s.focus.mission.segments[0]), 65);
+  assert.strictEqual(WA.focus.doneOn(s, '2026-10-06'), false, 'top 3 segment still empty');
+  WA.focus.logSession(s, '2026-10-06', 30, [], '', 'top3');
+  assert.strictEqual(WA.focus.doneOn(s, '2026-10-06'), true);
+  assert.strictEqual(WA.focus.minutesOn(s, '2026-10-06'), 95);
+  // legacy mission without segments still works
+  const o = WA.defaultState();
+  o.focus.mission = { title: 'Old', start: '2026-10-05', days: 90, minutes: 90, schedule: 'daily' };
+  o.focus.sessions['2026-10-05'] = { minutes: 90, taskIds: [] };
+  assert.strictEqual(WA.focus.doneOn(o, '2026-10-05'), true);
+});

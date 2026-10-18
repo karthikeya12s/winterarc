@@ -99,6 +99,9 @@
         else if (fs.todayDone) add('focus-done', 'good', `90:90:1 block done — day ${fs.dayNo} of ${fs.total}`, `${fs.hit} of ${fs.requiredSoFar} blocks hit, ${fs.hours} h banked on ${m.title}.`);
         if (fs.streak >= 5 && fs.todayDone) add('focus-streak', 'good', `${fs.streak} focus blocks in a row`, `Best run so far: ${fs.best}. Protect the morning.`);
         if (fs.missed >= 2 && fs.rate < 0.7) add('focus-slipping', 'warn', `Missed ${fs.missed} focus blocks so far`, `${Math.round(fs.rate * 100)}% hit rate. The rule only works when the block is non-negotiable: same time, phone away, door shut.`);
+        const top = WA.focus.top3(s, t);
+        if (fs.todayRequired && !top.length && new Date().getHours() >= 9) add('top3-empty', 'warn', 'Your top 3 for today are blank', 'Write them before anything else — that is what the 30-minute segment is for.');
+        else if (top.length && top.every((x) => x.done)) add('top3-done', 'good', 'Top 3 done for today', `${top.length}/${top.length}. Anything else today is a bonus.`);
         if (fs.dayNo === 45) add('focus-half', 'info', 'Halfway through the 90 days', `${fs.hours} h on ${m.title} so far. Re-read your "why" on the 90:90:1 page.`);
         const stale = WA.focus.get(s).tasks.filter((x) => x.progress > 0 && x.progress < 100 && x.updatedAt && WA.date.diffDays(x.updatedAt, t) >= 10);
         if (stale.length) add('focus-task-stale', 'info', `"${stale[0].title}" hasn't moved in ${WA.date.diffDays(stale[0].updatedAt, t)} days`, 'Either break it into a smaller next step or drop it from the mission.');

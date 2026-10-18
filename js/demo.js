@@ -55,13 +55,14 @@
     s.plans[thisWeek] = { focus: 'sleep', types: { Mon: 'Strength', Tue: 'Run', Wed: 'Strength', Fri: 'Strength', Sat: 'HIIT' }, note: 'Deload squats if knees complain.' };
     const fStart = D.addDays(t, -23);
     s.focus = {
-      mission: { title: 'Ship the Winter Arc iOS app', why: 'Automatic Health sync and real notifications — the two things the web app can never do.', start: fStart, days: 90, minutes: 90, blockTime: '06:30', schedule: 'weekdays', createdAt: fStart },
+      mission: { title: 'Get better physically and mentally', why: 'Strong body, clear head. Ninety mornings decide the year.', start: fStart, days: 90, minutes: 90, blockTime: '06:30', schedule: 'weekdays', createdAt: fStart,
+        segments: [{ id: 'fit', name: 'Fitness', minutes: 60, source: 'workouts' }, { id: 'top3', name: 'Top 3 things', minutes: 30, source: 'manual' }] },
       tasks: [
-        { id: 'f1', title: 'Learn SwiftUI basics (3 tutorials)', progress: 100, doneAt: D.addDays(t, -14), createdAt: fStart, updatedAt: D.addDays(t, -14) },
-        { id: 'f2', title: 'HealthKit read: steps, sleep, HR', progress: 70, createdAt: fStart, updatedAt: D.addDays(t, -2) },
-        { id: 'f3', title: 'Port habit model + storage', progress: 40, createdAt: fStart, updatedAt: D.addDays(t, -1) },
-        { id: 'f4', title: 'Local notifications', progress: 0, createdAt: D.addDays(t, -10) },
-        { id: 'f5', title: 'TestFlight build to my phone', progress: 0, createdAt: D.addDays(t, -10) },
+        { id: 'f1', title: 'Set up a 4-day lifting split', progress: 100, doneAt: D.addDays(t, -14), createdAt: fStart, updatedAt: D.addDays(t, -14) },
+        { id: 'f2', title: 'Run 5 km without stopping', progress: 70, createdAt: fStart, updatedAt: D.addDays(t, -2) },
+        { id: 'f3', title: 'Read 12 books (1 per week)', progress: 40, createdAt: fStart, updatedAt: D.addDays(t, -1) },
+        { id: 'f4', title: '10 min meditation streak to 30 days', progress: 20, createdAt: D.addDays(t, -10), updatedAt: D.addDays(t, -3) },
+        { id: 'f5', title: 'Bench press 80 kg × 5', progress: 0, createdAt: D.addDays(t, -10) },
       ],
       sessions: {},
     };
@@ -70,7 +71,12 @@
       if (dow === 0 || dow === 6) continue;
       const r = rnd();
       if (r < 0.15) continue;
-      s.focus.sessions[d] = { minutes: r < 0.3 ? 45 + Math.round(rnd() * 30) : 90 + Math.round(rnd() * 20), taskIds: [['f1', 'f2', 'f3'][Math.floor(rnd() * 3)]], note: '' };
+      const wMin = s.workouts.filter((w) => w.date === d).reduce((a, w) => a + w.duration, 0);
+      const fit = r < 0.3 ? Math.max(0, 25 + Math.round(rnd() * 20) - wMin) : Math.max(0, 62 + Math.round(rnd() * 12) - wMin);
+      const top = r < 0.3 ? 10 + Math.round(rnd() * 10) : 30 + Math.round(rnd() * 5);
+      s.focus.sessions[d] = { minutes: fit + top, segments: { fit, top3: top }, taskIds: [['f2', 'f3', 'f4'][Math.floor(rnd() * 3)]], note: '' };
+      const dd = (s.days[d] = s.days[d] || { habits: {}, note: '' });
+      dd.top3 = [{ text: 'Finish the quarterly deck', done: true }, { text: 'Call the dentist', done: rnd() < 0.7 }, { text: '30 pages of the book', done: rnd() < 0.5 }];
     }
     s.habits.push({ id: 'focus', name: 'Focus block', icon: '🎯', kind: 'check', auto: 'focus' });
     return s;

@@ -136,6 +136,7 @@
   }
   function route() {
     clearInterval(focusTick);
+    view.oninput = null;
     const [, name = 'today', arg] = current.split('/');
     const fn = routes[name] || renderToday;
     $$('.nav a').forEach((a) => a.classList.toggle('active', a.getAttribute('href') === `#/${name}`));
@@ -372,6 +373,7 @@
     startFocusTick();
     view.onchange = (e) => {
       const el = e.target;
+      if (handleTop3Change(e, day, () => renderToday(day))) return;
       if (el.dataset.value) {
         store.update((st) => {
           const en = WA.dayEntry(st, day);
@@ -1202,9 +1204,14 @@
       const tm = focus.timer();
       if (!el || !tm) return clearInterval(focusTick);
       el.textContent = fmtClock(Date.now() - tm.startedAt);
-      const target = (focus.get(store.get()).mission || {}).minutes || 90;
+      const st = store.get();
+      const m = focus.get(st).mission || {};
+      const extra = (Date.now() - tm.startedAt) / 60000;
       const bar = $('#fbar');
-      if (bar) bar.style.width = `${Math.min(100, ((focus.minutesOn(store.get(), D.today()) + (Date.now() - tm.startedAt) / 60000) / target) * 100)}%`;
+      if (bar) bar.style.width = `${Math.min(100, ((focus.minutesOn(st, D.today()) + extra) / (focus.targetMinutes(m) || 90)) * 100)}%`;
+      const seg = focus.segments(m).find((g) => g.id === tm.segId);
+      const sbar = seg && $(`[data-segbar="${seg.id}"]`);
+      if (sbar) sbar.style.width = `${Math.min(100, ((focus.segmentMinutes(st, D.today(), seg) + extra) / (seg.minutes || 1)) * 100)}%`;
     };
     tick();
     focusTick = setInterval(tick, 1000);
@@ -1224,25 +1231,61 @@
     const tm = day === t ? focus.timer() : null;
     const open = f.tasks.filter((x) => (x.progress || 0) < 100);
     const required = focus.isRequired(m, day);
-    const done = sess.minutes >= m.minutes;
-    const pct = Math.min(100, (sess.minutes / m.minutes) * 100);
+    const segs = focus.segments(m);
+    const target = focus.targetMinutes(m);
+    const total = focus.minutesOn(s, day);
+    const done = focus.doneOn(s, day);
+    const pct = Math.min(100, (total / (target || 1)) * 100);
+    const top = ((s.days[day] || {}).top3 || [{}, {}, {}]).concat([{}, {}, {}]).slice(0, 3);
+    const segRow = (g) => {
+      const mins = focus.segmentMinutes(s, day, g);
+      const segDone = mins >= g.minutes;
+      const running = tm && tm.segId === g.id;
+      return `<li class="fseg ${segDone ? 'done' : ''} ${running ? 'running' : ''}">
+        <div class="fseg-main"><span class="fseg-name">${esc(g.name)} ${segDone ? WA.icon('check') : ''}</span>
+          <span class="bar-mini"><span data-segbar="${g.id}" style="width:${Math.min(100, (mins / (g.minutes || 1)) * 100)}%"></span></span>
+          <span class="muted small">${mins}/${g.minutes} min${g.source === 'workouts' ? ' · counts logged workouts' : ''}</span></div>
+        ${
+          running
+            ? `<span class="fseg-ctl"><span id="ftimer" class="clock">00:00</span><button class="btn small" data-fstop>${WA.icon('stop')} Stop</button></span>`
+            : tm
+              ? ''
+              : `<span class="fseg-ctl">${day === t ? `<button class="btn small ${segDone ? 'ghost' : ''}" data-fstart="${g.id}">${WA.icon('play')} Start</button>` : ''}<span class="focus-manual"><input type="number" inputmode="numeric" min="1" max="600" placeholder="min" data-fmin="${g.id}" aria-label="${esc(g.name)} minutes"><button class="btn small ghost" data-flog="${g.id}">Log</button></span></span>`
+        }
+      </li>`;
+    };
     return `<section class="card focus-card ${done ? 'done' : ''}">
       <div class="card-head"><h2>${WA.icon('focus')} 90:90:1 · Day ${st.dayNo}</h2><a href="#/focus" class="link">${esc(m.title)}</a></div>
       <div class="fbar"><span id="fbar" style="width:${pct}%"></span></div>
       <div class="focus-row">
-        <div class="focus-num"><span class="stat-num">${sess.minutes}<small>/${m.minutes} min</small></span><span class="stat-label">${done ? 'block done ✓' : required ? 'today\'s block' : 'rest day · optional'}</span></div>
-        ${
-          tm
-            ? `<div class="focus-timer"><span id="ftimer" class="clock">00:00</span><button class="btn" data-fstop>${WA.icon('stop')} Stop & log</button></div>`
-            : day === t
-              ? `<div class="focus-timer"><button class="btn" data-fstart>${WA.icon('play')} Start block</button><span class="focus-manual"><input type="number" inputmode="numeric" min="1" max="600" placeholder="min" id="fmin" aria-label="Minutes"><button class="btn small ghost" data-flog>Log</button></span></div>`
-              : `<div class="focus-timer"><span class="focus-manual"><input type="number" inputmode="numeric" min="1" max="600" placeholder="min" id="fmin" aria-label="Minutes"><button class="btn small ghost" data-flog>Log</button></span></div>`
-        }
+        <div class="focus-num"><span class="stat-num">${total}<small>/${target} min</small></span><span class="stat-label">${done ? 'block done ✓' : required ? "today's block" : 'rest day · optional'}</span></div>
+        ${tm && tm.taskIds.length ? `<span class="muted small">Working on: ${tm.taskIds.map((id) => esc((f.tasks.find((x) => x.id === id) || {}).title || '')).filter(Boolean).join(', ')}</span>` : ''}
       </div>
-      ${open.length && !tm ? `<div class="chips">${open.slice(0, 6).map((x) => taskChip(x, focusPick.has(x.id))).join('')}</div><p class="muted small">Tap the task(s) you'll work on, then start.</p>` : ''}
-      ${tm && tm.taskIds.length ? `<p class="muted small">Working on: ${tm.taskIds.map((id) => esc((f.tasks.find((x) => x.id === id) || {}).title || '')).filter(Boolean).join(', ')}</p>` : ''}
+      <ul class="fsegs">${segs.map(segRow).join('')}</ul>
+      ${
+        m.top3 !== false
+          ? `<div class="top3"><div class="top3-head"><span>Top 3 today</span><span class="muted small">${top.filter((x) => x.done && x.text).length}/${top.filter((x) => x.text).length || 3}</span></div>
+          ${top.map((x, i) => `<label class="top3-row ${x.done ? 'done' : ''}"><input type="checkbox" data-top3done="${i}" ${x.done ? 'checked' : ''} ${x.text ? '' : 'disabled'}><span class="top3-n">${i + 1}</span><input type="text" data-top3="${i}" value="${esc(x.text || '')}" placeholder="${['The one thing that must happen today', 'Second priority', 'Third priority'][i]}" maxlength="120"></label>`).join('')}</div>`
+          : ''
+      }
+      ${open.length && !tm ? `<div class="chips">${open.slice(0, 6).map((x) => taskChip(x, focusPick.has(x.id))).join('')}</div><p class="muted small">Tap the mission task(s) this block moves, then start a segment.</p>` : ''}
       ${sess.taskIds && sess.taskIds.length ? `<p class="muted small">Logged today: ${sess.taskIds.map((id) => esc((f.tasks.find((x) => x.id === id) || {}).title || '')).filter(Boolean).join(', ')}</p>` : ''}
     </section>`;
+  }
+  /** Top-3 edits (text / checkbox) from the focus card. Returns true if handled. */
+  function handleTop3Change(e, day, rerender) {
+    const el = e.target;
+    if (el.dataset.top3 == null && el.dataset.top3done == null) return false;
+    store.update((st) => {
+      const en = WA.dayEntry(st, day);
+      const list = (en.top3 = (en.top3 || []).concat([{}, {}, {}]).slice(0, 3).map((x) => ({ text: x.text || '', done: !!x.done })));
+      if (el.dataset.top3 != null) {
+        list[+el.dataset.top3].text = el.value.trim();
+        if (!list[+el.dataset.top3].text) list[+el.dataset.top3].done = false;
+      } else list[+el.dataset.top3done].done = el.checked;
+    });
+    rerender();
+    return true;
   }
   /** Shared click handling for the focus card (Today + Focus page). Returns true if handled. */
   function handleFocusClick(e, day, rerender) {
@@ -1252,29 +1295,32 @@
       pick.classList.toggle('on');
       return true;
     }
-    if (e.target.closest('[data-fstart]')) {
-      focus.startTimer([...focusPick]);
-      toast('Block started. Phone away, door shut.');
+    const fs = e.target.closest('[data-fstart]');
+    if (fs) {
+      focus.startTimer([...focusPick], fs.dataset.fstart);
+      toast('Segment started. Phone away, door shut.');
       rerender();
       return true;
     }
     if (e.target.closest('[data-fstop]')) {
       const r = focus.stopTimer();
       if (r) {
-        let sess;
-        store.update((st) => (sess = focus.logSession(st, D.today(), r.minutes, r.taskIds)));
-        const m = focus.get(store.get()).mission;
-        toast(sess.minutes >= m.minutes ? `${r.minutes} min logged — block done 🎯` : `${r.minutes} min logged · ${m.minutes - sess.minutes} to go`);
+        store.update((st) => focus.logSession(st, D.today(), r.minutes, r.taskIds, '', r.segId));
+        const st = store.get();
+        const m = focus.get(st).mission;
+        const left = focus.targetMinutes(m) - focus.minutesOn(st, D.today());
+        toast(focus.doneOn(st, D.today()) ? `${r.minutes} min logged — block done 🎯` : `${r.minutes} min logged · ${Math.max(0, left)} to go`);
       }
       focusPick = new Set();
       rerender();
       return true;
     }
-    if (e.target.closest('[data-flog]')) {
-      const inp = $('#fmin');
+    const fl = e.target.closest('[data-flog]');
+    if (fl) {
+      const inp = $(`[data-fmin="${fl.dataset.flog}"]`);
       const mins = parseInt(inp && inp.value, 10);
       if (!mins) return (inp && inp.focus(), true);
-      store.update((st) => focus.logSession(st, day, mins, [...focusPick]));
+      store.update((st) => focus.logSession(st, day, mins, [...focusPick], '', fl.dataset.flog));
       focusPick = new Set();
       toast(`${mins} min logged`);
       rerender();
@@ -1292,7 +1338,9 @@
     const editing = arg === 'edit' || !focus.hasMission(s);
 
     if (editing) {
-      const d = m || { title: '', why: '', start: t, days: 90, minutes: 90, blockTime: '07:00', schedule: 'weekdays' };
+      const d = m || { title: 'Get better physically and mentally', why: '', start: t, days: 90, minutes: 90, blockTime: '07:00', schedule: 'weekdays', segments: [{ id: 'fit', name: 'Fitness', minutes: 60, source: 'workouts' }, { id: 'top3', name: 'Top 3 things', minutes: 30, source: 'manual' }] };
+      const segs = focus.segments(d);
+      const segRow = (g) => `<div class="seg-row"><input data-s="name" value="${esc(g.name)}" placeholder="Segment" aria-label="Segment name" required maxlength="40"><input type="number" data-s="minutes" value="${g.minutes}" min="5" max="480" aria-label="Minutes" required><select data-s="source" aria-label="Counts"><option value="manual" ${g.source !== 'workouts' ? 'selected' : ''}>timer / manual</option><option value="workouts" ${g.source === 'workouts' ? 'selected' : ''}>+ logged workouts</option></select><button type="button" class="icon-btn small" data-s-remove aria-label="Remove segment">✕</button></div>`;
       view.innerHTML = `
       <header class="page-head"><div><span class="eyebrow">90 days · 90 minutes · 1 thing</span><h1>${m ? 'Edit mission' : 'Start your 90:90:1'}</h1></div></header>
       <div class="page-body layout-insights">
@@ -1301,11 +1349,14 @@
         <form id="mission">
           <label>The one thing<input name="title" value="${esc(d.title)}" placeholder="e.g. Ship the iOS app · Pass the CFA · Launch the newsletter" required maxlength="80"></label>
           <label>Why it matters<textarea name="why" rows="2" placeholder="The sentence you'll re-read on day 40 when it gets boring.">${esc(d.why || '')}</textarea></label>
+          <div class="ex-head"><span>The block, in segments <small>minutes each</small></span><button type="button" class="btn small ghost" data-s-add>+ Segment</button></div>
+          <div id="segs" class="seg-list">${segs.map(segRow).join('')}</div>
+          <p class="muted small">A segment that counts logged workouts fills itself when you log a session on Today. Total: <b id="segtotal">${focus.targetMinutes(d)}</b> min.</p>
           <div class="form-grid">
             <label>Start<input type="date" name="start" value="${d.start}" required></label>
             <label>Days<input type="number" name="days" value="${d.days}" min="7" max="365" required></label>
-            <label>Block <small>min</small><input type="number" name="minutes" value="${d.minutes}" min="15" max="480" required></label>
             <label>Block starts<input type="time" name="blockTime" value="${d.blockTime || '07:00'}"></label>
+            <label>Daily top 3 list<select name="top3"><option value="1" ${d.top3 !== false ? 'selected' : ''}>On</option><option value="0" ${d.top3 === false ? 'selected' : ''}>Off</option></select></label>
           </div>
           <label>Days that count<select name="schedule"><option value="weekdays" ${d.schedule === 'weekdays' ? 'selected' : ''}>Weekdays (Mon–Fri)</option><option value="daily" ${d.schedule === 'daily' ? 'selected' : ''}>Every day</option></select></label>
           <div class="btn-row"><button class="btn">${m ? 'Save' : 'Start the 90 days'}</button>${m ? '<a class="btn ghost" href="#/focus">Cancel</a>' : ''}</div>
@@ -1327,13 +1378,28 @@
         const el = e.target.elements;
         store.update((st) => {
           const ff = focus.get(st);
-          ff.mission = { ...(ff.mission || { createdAt: t }), title: el.title.value.trim(), why: el.why.value.trim(), start: el.start.value, days: +el.days.value || 90, minutes: +el.minutes.value || 90, blockTime: el.blockTime.value || '07:00', schedule: el.schedule.value };
+          const segments = $$('#segs .seg-row').map((r, i) => ({ id: (r.dataset.id || '') || `s${i}_${WA.uid().slice(0, 4)}`, name: $('[data-s=name]', r).value.trim() || `Segment ${i + 1}`, minutes: +$('[data-s=minutes]', r).value || 30, source: $('[data-s=source]', r).value }));
+          const total = segments.reduce((a, g) => a + g.minutes, 0);
+          ff.mission = { ...(ff.mission || { createdAt: t }), title: el.title.value.trim(), why: el.why.value.trim(), start: el.start.value, days: +el.days.value || 90, minutes: total || 90, blockTime: el.blockTime.value || '07:00', schedule: el.schedule.value, segments, top3: el.top3.value === '1' };
           if (!st.habits.some((h) => h.auto === 'focus')) st.habits.unshift({ id: 'focus', name: 'Focus block', icon: '🎯', kind: 'check', auto: 'focus' });
         });
         toast(m ? 'Mission saved' : 'Mission set. Day 1 is ' + D.fmt(el.start.value));
         go('#/focus');
       };
-      view.onclick = null;
+      // keep existing segment ids so logged minutes stay attached
+      $$('#segs .seg-row').forEach((r, i) => (r.dataset.id = (segs[i] || {}).id || ''));
+      const refreshTotal = () => ($('#segtotal').textContent = $$('#segs [data-s=minutes]').reduce((a, i) => a + (+i.value || 0), 0));
+      view.onclick = (e) => {
+        if (e.target.closest('[data-s-add]')) {
+          $('#segs').insertAdjacentHTML('beforeend', segRow({ name: '', minutes: 30, source: 'manual' }));
+          $('#segs .seg-row:last-child input').focus();
+        } else if (e.target.closest('[data-s-remove]')) {
+          if ($$('#segs .seg-row').length > 1) e.target.closest('.seg-row').remove();
+          else toast('Keep at least one segment');
+          refreshTotal();
+        }
+      };
+      view.oninput = (e) => e.target.dataset.s === 'minutes' && refreshTotal();
       return;
     }
 
@@ -1341,7 +1407,7 @@
     const cal = focus.calendar(s, t);
     const open = f.tasks.filter((x) => (x.progress || 0) < 100).sort((a, b) => (b.progress || 0) - (a.progress || 0));
     const done = f.tasks.filter((x) => (x.progress || 0) >= 100).sort((a, b) => (a.doneAt < b.doneAt ? 1 : -1));
-    const sessions = Object.entries(f.sessions).filter(([, v]) => v.minutes).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 14);
+    const sessions = [...new Set([...Object.keys(f.sessions), ...s.workouts.map((w) => w.date)])].filter((d) => d >= m.start && d <= focus.endDate(m) && d <= t && focus.minutesOn(s, d)).sort().reverse().slice(0, 14).map((d) => [d, f.sessions[d] || { minutes: 0, taskIds: [] }]);
     const taskName = (id) => (f.tasks.find((x) => x.id === id) || {}).title || '';
     const taskRow = (x) => `<li class="ftask ${x.progress >= 100 ? 'done' : ''}" data-task="${x.id}">
         <button class="check ${x.progress >= 100 ? '' : ''}" data-tdone aria-label="Mark done">${WA.icon('check')}</button>
@@ -1390,7 +1456,7 @@
         <h2>Session log</h2>
         ${
           sessions.length
-            ? `<ul class="list">${sessions.map(([d, v]) => `<li class="row"><div class="row-date">${D.fmt(d, { weekday: 'short', day: 'numeric' })}</div><div class="row-main"><strong>${v.minutes} min</strong> ${v.minutes >= m.minutes ? '<span class="badge pr">hit</span>' : ''}<div class="muted small">${(v.taskIds || []).map(taskName).filter(Boolean).map(esc).join(' · ') || '—'}</div>${v.note ? `<div class="muted small">${esc(v.note)}</div>` : ''}</div></li>`).join('')}</ul>`
+            ? `<ul class="list">${sessions.map(([d, v]) => `<li class="row"><div class="row-date">${D.fmt(d, { weekday: 'short', day: 'numeric' })}</div><div class="row-main"><strong>${focus.minutesOn(s, d)} min</strong> ${focus.doneOn(s, d) ? '<span class="badge pr">hit</span>' : ''} <span class="muted small">${focus.segments(m).map((g) => `${esc(g.name)} ${focus.segmentMinutes(s, d, g)}`).join(' · ')}</span><div class="muted small">${(v.taskIds || []).map(taskName).filter(Boolean).map(esc).join(' · ') || '—'}</div>${v.note ? `<div class="muted small">${esc(v.note)}</div>` : ''}</div></li>`).join('')}</ul>`
             : '<p class="muted">No blocks logged yet. Start the timer on Today.</p>'
         }
       </section>
@@ -1399,6 +1465,7 @@
     finishRender('focus', saved);
     startFocusTick();
 
+    view.onchange = (e) => handleTop3Change(e, t, renderFocus);
     $('#addtask').onsubmit = (e) => {
       e.preventDefault();
       const title = e.target.elements.title.value.trim();
