@@ -68,7 +68,9 @@
       const wMin = s.workouts.filter((w) => w.date === d).reduce((a, w) => a + w.duration, 0);
       const fit = r < 0.3 ? Math.max(0, 25 + Math.round(rnd() * 20) - wMin) : Math.max(0, 62 + Math.round(rnd() * 12) - wMin);
       const top = r < 0.3 ? 10 + Math.round(rnd() * 10) : 30 + Math.round(rnd() * 5);
-      s.focus.sessions[d] = { minutes: fit + top, segments: { fit, top3: top }, taskIds: [], note: '' };
+      const lateBy = rnd() < 0.7 ? Math.round(rnd() * 20) - 5 : 30 + Math.round(rnd() * 40);
+      const startMin = 6 * 60 + 30 + lateBy;
+      s.focus.sessions[d] = { minutes: fit + top, segments: { fit, top3: top }, startedAt: `${String(Math.floor(startMin / 60)).padStart(2, '0')}:${String(startMin % 60).padStart(2, '0')}`, taskIds: [], note: '' };
       const dd = (s.days[d] = s.days[d] || { habits: {}, note: '' });
       dd.top3 = [{ text: 'Finish the quarterly deck', done: true }, { text: 'Call the dentist', done: rnd() < 0.7 }, { text: '30 pages of the book', done: rnd() < 0.5 }];
     }

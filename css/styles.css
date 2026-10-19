@@ -673,3 +673,12 @@ dialog .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .hbar span.warn { background: var(--warn); }
 .goal-bar .hbar span { background: var(--blue); }
 .top3-stat { margin-top: 14px; }
+
+/* start time / on-time */
+.start-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 6px 0 2px; }
+.start-field { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--muted); }
+.start-field input { width: auto; min-height: 36px; padding: 4px 8px; font-family: var(--font-display); }
+.ontime { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-display); font-size: 0.82rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
+.ontime .ico { width: 14px; height: 14px; stroke-width: 3; }
+.ontime.ok { background: var(--green-soft); color: var(--green); }
+.ontime.late { background: var(--warn-soft); color: var(--warn); }

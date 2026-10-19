@@ -3,7 +3,8 @@
  *   mission: { title, why, start, days, minutes, blockTime, schedule: 'weekdays'|'daily', createdAt,
  *              segments: [{ id, name, minutes, source: 'manual'|'workouts' }] }   // the block split into parts
  *   tasks:   [{ id, title, progress 0..100, doneAt, createdAt }]
- *   sessions:{ date: { minutes, segments: { segId: minutes }, taskIds: [], note } }
+ *   sessions:{ date: { minutes, segments: { segId: minutes }, startedAt: 'HH:MM', taskIds: [], note } }
+ * On time = startedAt within ±mission.tolerance (default 30) minutes of mission.blockTime.
  * A segment with source 'workouts' is also credited with the workout minutes logged that day.
  * Top-3 lists live in state.days[date].top3 = [{ text, done }].
  * A running timer is kept in localStorage separately so it survives reloads. */
@@ -35,6 +36,45 @@
   const targetMinutes = (m) => segments(m).reduce((a, x) => a + (+x.minutes || 0), 0);
   const minutesOn = (s, date) => (hasMission(s) ? segments(get(s).mission).reduce((a, seg) => a + segmentMinutes(s, date, seg), 0) : 0);
   const doneOn = (s, date) => hasMission(s) && segments(get(s).mission).every((seg) => segmentMinutes(s, date, seg) >= (+seg.minutes || 0));
+  const hhmm = (str) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(str || '');
+    return m ? +m[1] * 60 + +m[2] : null;
+  };
+  const nowHHMM = () => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const startTimeOn = (s, date) => (get(s).sessions[date] || {}).startedAt || null;
+  /** Minutes late (negative = early) vs block time, or null when no start recorded. */
+  function startDelta(s, date) {
+    const m = get(s).mission;
+    const a = hhmm(startTimeOn(s, date)), b = hhmm(m && m.blockTime);
+    return a == null || b == null ? null : a - b;
+  }
+  const tolerance = (m) => (m && m.tolerance != null ? +m.tolerance : 30);
+  const onTimeOn = (s, date) => {
+    const d = startDelta(s, date);
+    return d == null ? null : Math.abs(d) <= tolerance(get(s).mission);
+  };
+  function setStartTime(s, date, time) {
+    const f = get(s);
+    const cur = (f.sessions[date] = f.sessions[date] || { minutes: 0, segments: {}, taskIds: [], note: '' });
+    if (time) cur.startedAt = time;
+    else delete cur.startedAt;
+    return cur;
+  }
+  /** On-time numbers up to `on`: days with a recorded start, how many were within the window, average lateness. */
+  function punctuality(s, on) {
+    const m = get(s).mission;
+    const t = on || D().today();
+    if (!m) return null;
+    const days = D().range(m.start, t < endDate(m) ? t : endDate(m)).filter((d) => startTimeOn(s, d));
+    const deltas = days.map((d) => startDelta(s, d));
+    const onTime = deltas.filter((d) => Math.abs(d) <= tolerance(m)).length;
+    const late = deltas.filter((d) => d > tolerance(m)).length;
+    const avg = deltas.length ? Math.round(deltas.reduce((a, b) => a + b, 0) / deltas.length) : null;
+    return { started: days.length, onTime, late, rate: days.length ? onTime / days.length : 0, avgDelta: avg, tolerance: tolerance(m), recent: days.slice(-5).map((d) => ({ date: d, delta: startDelta(s, d) })) };
+  }
   const top3 = (s, date) => ((s.days && s.days[date] && s.days[date].top3) || []).filter((x) => x && x.text);
 
   /** Headline numbers up to `on` (today by default). */
@@ -135,5 +175,5 @@
     return t ? Math.floor((Date.now() - t.startedAt) / 60000) : 0;
   };
 
-  WA.focus = { get, hasMission, stats, calendar, logSession, isRequired, endDate, doneOn, minutesOn, segments, segmentMinutes, targetMinutes, top3, timer, startTimer, stopTimer, elapsedMinutes };
+  WA.focus = { get, hasMission, stats, calendar, logSession, isRequired, endDate, doneOn, minutesOn, segments, segmentMinutes, targetMinutes, top3, timer, startTimer, stopTimer, elapsedMinutes, startTimeOn, startDelta, onTimeOn, setStartTime, punctuality, tolerance, nowHHMM };
 })(typeof window !== 'undefined' ? window : globalThis);

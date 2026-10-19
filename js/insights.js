@@ -102,6 +102,10 @@
         const top = WA.focus.top3(s, t);
         if (fs.todayRequired && !top.length && new Date().getHours() >= 9) add('top3-empty', 'warn', 'Your top 3 for today are blank', 'Write them before anything else — that is what the 30-minute segment is for.');
         else if (top.length && top.every((x) => x.done)) add('top3-done', 'good', 'Top 3 done for today', `${top.length}/${top.length}. Anything else today is a bonus.`);
+        const pun = WA.focus.punctuality(s, t);
+        const recentLate = pun.recent.filter((x) => x.delta > pun.tolerance).length;
+        if (pun.recent.length >= 3 && recentLate >= 3) add('focus-late', 'warn', `Started late ${recentLate} of the last ${pun.recent.length} blocks`, `Block time is ${m.blockTime || '07:00'} (±${pun.tolerance} min). A late start usually means the evening before went long — set the alarm 15 minutes earlier, or move the block time if the current one is a lie.`);
+        else if (pun.started >= 5 && pun.rate >= 0.9) add('focus-ontime', 'good', `On time ${Math.round(pun.rate * 100)}% of the time`, `${pun.onTime}/${pun.started} blocks started within ±${pun.tolerance} min of ${m.blockTime || '07:00'}. That is the whole game.`);
         if (fs.dayNo === 45) add('focus-half', 'info', 'Halfway through the 90 days', `${fs.hours} h on ${m.title} so far. Re-read your "why" on the 90:90:1 page.`);
       } else if (fs.ended) add('focus-complete', 'good', `90:90:1 complete: ${fs.hit}/${fs.totalRequired} blocks, ${fs.hours} h`, `${m.title}. Start the next 90 on the 90:90:1 page.`);
     }

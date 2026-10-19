@@ -1258,6 +1258,13 @@
       <div class="focus-row">
         <div class="focus-num"><span class="stat-num">${total}<small>/${target} min</small></span><span class="stat-label">${done ? 'block done ✓' : required ? "today's block" : 'rest day · optional'}</span></div>
       </div>
+      ${(() => {
+        const started = focus.startTimeOn(s, day);
+        const delta = focus.startDelta(s, day);
+        const tol = focus.tolerance(m);
+        const status = delta == null ? `<span class="muted small">block time ${esc(m.blockTime || '07:00')} · on time = ±${tol} min</span>` : Math.abs(delta) <= tol ? `<span class="ontime ok">${WA.icon('check')} on time${delta ? ` (${delta > 0 ? '+' : ''}${delta} min)` : ''}</span>` : `<span class="ontime late">${delta > 0 ? `${delta} min late` : `${-delta} min early`}</span>`;
+        return `<div class="start-row"><label class="start-field"><span>Started</span><input type="time" data-fstarttime value="${esc(started || '')}" aria-label="Block start time"></label>${status}</div>`;
+      })()}
       <ul class="fsegs">${segs.map(segRow).join('')}</ul>
       ${
         m.top3 !== false
@@ -1270,6 +1277,11 @@
   /** Top-3 edits (text / checkbox) from the focus card. Returns true if handled. */
   function handleTop3Change(e, day, rerender) {
     const el = e.target;
+    if (el.dataset.fstarttime != null) {
+      store.update((st) => focus.setStartTime(st, day, el.value));
+      rerender();
+      return true;
+    }
     if (el.dataset.top3 == null && el.dataset.top3done == null) return false;
     store.update((st) => {
       const en = WA.dayEntry(st, day);
@@ -1293,6 +1305,7 @@
     const fs = e.target.closest('[data-fstart]');
     if (fs) {
       focus.startTimer([...focusPick], fs.dataset.fstart);
+      if (day === D.today() && !focus.startTimeOn(store.get(), day)) store.update((st) => focus.setStartTime(st, day, focus.nowHHMM()));
       toast('Segment started. Phone away, door shut.');
       rerender();
       return true;
@@ -1351,6 +1364,7 @@
             <label>Start<input type="date" name="start" value="${d.start}" required></label>
             <label>Days<input type="number" name="days" value="${d.days}" min="7" max="365" required></label>
             <label>Block starts<input type="time" name="blockTime" value="${d.blockTime || '07:00'}"></label>
+            <label>On-time window <small>± min</small><input type="number" name="tolerance" value="${d.tolerance != null ? d.tolerance : 30}" min="0" max="180"></label>
             <label>Daily top 3 list<select name="top3"><option value="1" ${d.top3 !== false ? 'selected' : ''}>On</option><option value="0" ${d.top3 === false ? 'selected' : ''}>Off</option></select></label>
           </div>
           <label>Days that count<select name="schedule"><option value="weekdays" ${d.schedule === 'weekdays' ? 'selected' : ''}>Weekdays (Mon–Fri)</option><option value="daily" ${d.schedule === 'daily' ? 'selected' : ''}>Every day</option></select></label>
@@ -1375,7 +1389,7 @@
           const ff = focus.get(st);
           const segments = $$('#segs .seg-row').map((r, i) => ({ id: (r.dataset.id || '') || `s${i}_${WA.uid().slice(0, 4)}`, name: $('[data-s=name]', r).value.trim() || `Segment ${i + 1}`, minutes: +$('[data-s=minutes]', r).value || 30, source: $('[data-s=source]', r).value }));
           const total = segments.reduce((a, g) => a + g.minutes, 0);
-          ff.mission = { ...(ff.mission || { createdAt: t }), title: el.title.value.trim(), why: el.why.value.trim(), start: el.start.value, days: +el.days.value || 90, minutes: total || 90, blockTime: el.blockTime.value || '07:00', schedule: el.schedule.value, segments, top3: el.top3.value === '1' };
+          ff.mission = { ...(ff.mission || { createdAt: t }), title: el.title.value.trim(), why: el.why.value.trim(), start: el.start.value, days: +el.days.value || 90, minutes: total || 90, blockTime: el.blockTime.value || '07:00', tolerance: Math.max(0, +el.tolerance.value || 0), schedule: el.schedule.value, segments, top3: el.top3.value === '1' };
           if (!st.habits.some((h) => h.auto === 'focus')) st.habits.unshift({ id: 'focus', name: 'Focus block', icon: '🎯', kind: 'check', auto: 'focus' });
         });
         toast(m ? 'Mission saved' : 'Mission set. Day 1 is ' + D.fmt(el.start.value));
@@ -1421,6 +1435,7 @@
     const top3Total = top3Days.reduce((a, d) => a + focus.top3(s, d).length, 0);
     const sessions = [...new Set([...Object.keys(f.sessions), ...s.workouts.map((w) => w.date)])].filter((d) => d >= m.start && d <= end && d <= t && focus.minutesOn(s, d)).sort().reverse().slice(0, 14);
     const projected = elapsed.length ? Math.round(st.rate * st.totalRequired) : null;
+    const pun = focus.punctuality(s, t);
 
     view.innerHTML = `
     <header class="page-head"><div><span class="eyebrow">90:90:1</span><h1>${esc(m.title)}</h1></div>
@@ -1454,6 +1469,8 @@
           <div class="goal-bar"><div class="goal-bar-head"><span>Time elapsed</span><b>${Math.round((st.dayNo / st.total) * 100)}%</b></div><span class="hbar"><span style="width:${(st.dayNo / st.total) * 100}%"></span></span></div>
           <div class="goal-bar"><div class="goal-bar-head"><span>Blocks completed</span><b>${st.hit} / ${st.totalRequired}</b></div><span class="hbar"><span class="accent" style="width:${(st.hit / Math.max(1, st.totalRequired)) * 100}%"></span></span>
             <span class="muted small">${projected != null ? `At this rate you'll finish with ${projected} of ${st.totalRequired} blocks.` : 'Hit today\'s block to start the count.'}</span></div>
+          <div class="goal-bar"><div class="goal-bar-head"><span>Started on time <small>${esc(m.blockTime || '07:00')} ±${pun.tolerance} min</small></span><b>${pun.started ? Math.round(pun.rate * 100) + '%' : '—'}</b></div><span class="hbar"><span class="${pun.rate >= 0.8 ? 'good' : pun.rate >= 0.5 ? 'accent' : 'warn'}" style="width:${pun.rate * 100}%"></span></span>
+            <span class="muted small">${pun.started ? `${pun.onTime}/${pun.started} starts in the window · average ${pun.avgDelta > 0 ? `${pun.avgDelta} min late` : pun.avgDelta < 0 ? `${-pun.avgDelta} min early` : 'exactly on time'}` : 'Start a segment timer and the start time is recorded automatically.'}</span></div>
         </div>
       </section>
       <section class="card">
@@ -1472,7 +1489,7 @@
         <h2>Session log</h2>
         ${
           sessions.length
-            ? `<ul class="list">${sessions.map((d) => `<li class="row"><div class="row-date">${D.fmt(d, { weekday: 'short', day: 'numeric' })}</div><div class="row-main"><strong>${focus.minutesOn(s, d)} min</strong> ${focus.doneOn(s, d) ? '<span class="badge pr">hit</span>' : ''}<div class="muted small">${segs.map((g) => `${esc(g.name)} ${focus.segmentMinutes(s, d, g)}`).join(' · ')}${focus.top3(s, d).length ? ` · top 3: ${focus.top3(s, d).filter((x) => x.done).length}/${focus.top3(s, d).length}` : ''}</div>${(f.sessions[d] || {}).note ? `<div class="muted small">${esc(f.sessions[d].note)}</div>` : ''}</div></li>`).join('')}</ul>`
+            ? `<ul class="list">${sessions.map((d) => `<li class="row"><div class="row-date">${D.fmt(d, { weekday: 'short', day: 'numeric' })}</div><div class="row-main"><strong>${focus.minutesOn(s, d)} min</strong> ${focus.doneOn(s, d) ? '<span class="badge pr">hit</span>' : ''} ${focus.startTimeOn(s, d) ? `<span class="muted small">${focus.startTimeOn(s, d)}${focus.onTimeOn(s, d) ? ' ✓' : ` (${focus.startDelta(s, d) > 0 ? '+' : ''}${focus.startDelta(s, d)} min)`}</span>` : ''}<div class="muted small">${segs.map((g) => `${esc(g.name)} ${focus.segmentMinutes(s, d, g)}`).join(' · ')}${focus.top3(s, d).length ? ` · top 3: ${focus.top3(s, d).filter((x) => x.done).length}/${focus.top3(s, d).length}` : ''}</div>${(f.sessions[d] || {}).note ? `<div class="muted small">${esc(f.sessions[d].note)}</div>` : ''}</div></li>`).join('')}</ul>`
             : '<p class="muted">No blocks logged yet. Start a segment on Today.</p>'
         }
       </section>
@@ -1485,7 +1502,7 @@
     view.onclick = (e) => {
       if (handleFocusClick(e, t, renderFocus)) return;
       if (e.target.closest('#fshare')) {
-        const txt = `🎯 90:90:1 — ${m.title}\nDay ${st.dayNo}/${st.total} · ${st.hit}/${st.requiredSoFar} blocks hit · ${st.streak}-day streak · ${st.hours} h in\n${segStats.map(({ g, rate }) => `${g.name} ${Math.round(rate * 100)}%`).join(' · ')}`;
+        const txt = `🎯 90:90:1 — ${m.title}\nDay ${st.dayNo}/${st.total} · ${st.hit}/${st.requiredSoFar} blocks hit · ${st.streak}-day streak · ${st.hours} h in\n${segStats.map(({ g, rate }) => `${g.name} ${Math.round(rate * 100)}%`).join(' · ')}${pun.started ? ` · on time ${Math.round(pun.rate * 100)}%` : ''}`;
         return shareText(`90:90:1 — ${m.title}`, txt);
       }
     };

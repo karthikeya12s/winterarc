@@ -187,3 +187,16 @@ test('90:90:1 segments: workouts credit the fitness segment; both segments neede
   o.focus.sessions['2026-10-05'] = { minutes: 90, taskIds: [] };
   assert.strictEqual(WA.focus.doneOn(o, '2026-10-05'), true);
 });
+
+test('90:90:1 on-time tracking: ±window around block time', () => {
+  const s = WA.defaultState();
+  s.focus.mission = { title: 'Better', start: '2026-10-05', days: 90, schedule: 'daily', blockTime: '06:30', tolerance: 30, segments: [{ id: 'a', name: 'A', minutes: 10, source: 'manual' }] };
+  WA.focus.setStartTime(s, '2026-10-05', '06:40'); // +10 on time
+  WA.focus.setStartTime(s, '2026-10-06', '07:15'); // +45 late
+  WA.focus.setStartTime(s, '2026-10-07', '06:00'); // -30 on time (edge)
+  WA.focus.setStartTime(s, '2026-10-08', '05:55'); // -35 early = not in window
+  assert.deepStrictEqual(['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08'].map((d) => WA.focus.onTimeOn(s, d)), [true, false, true, false]);
+  assert.strictEqual(WA.focus.onTimeOn(s, '2026-10-09'), null);
+  const p = WA.focus.punctuality(s, '2026-10-09');
+  assert.deepStrictEqual([p.started, p.onTime, p.late, p.avgDelta], [4, 2, 1, -2]); // (10+45-30-35)/4 = -2.5 → -2 (round half toward +inf)
+});
