@@ -55,6 +55,11 @@
       markSent('morning');
       notify(`Day ${prog.day} of ${prog.total} — ${s.challenge.name}`, left.length ? `Today: ${left.map((h) => h.name).join(' · ')}` : 'All done already. Legend.');
     }
+    const f = WA.focus && WA.focus.get(s);
+    if (f && f.mission && f.mission.title && WA.focus.isRequired(f.mission, t) && hm >= (f.mission.blockTime || '07:00') && !WA.focus.doneOn(s, t) && !sentToday('focus')) {
+      markSent('focus');
+      notify(`90:90:1 — ${f.mission.title}`, `${f.mission.minutes || 90} minutes. Start the timer on Today.`);
+    }
     if (hm >= '20:00' && left.length && !sentToday('evening')) {
       markSent('evening');
       const { current } = WA.calc.streaks(s, t);
@@ -66,6 +71,32 @@
     tick();
     setInterval(tick, 60000);
     document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && tick());
+  }
+
+  function focusEvent(s, d, stamp) {
+    const f = WA.focus && WA.focus.get(s);
+    if (!f || !f.mission || !f.mission.title) return [];
+    const m = f.mission;
+    const from = WA.date.today() > m.start ? WA.date.today() : m.start;
+    const [hh, mm] = (m.blockTime || '07:00').split(':');
+    const end = WA.focus.endDate(m);
+    if (from > end) return [];
+    return [
+      'BEGIN:VEVENT',
+      `UID:winterarc-focus-${d(m.start)}@winterarc`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${d(from)}T${hh}${mm}00`,
+      `DURATION:PT${m.minutes || 90}M`,
+      `RRULE:FREQ=${m.schedule === 'weekdays' ? 'WEEKLY;BYDAY=MO,TU,WE,TH,FR' : 'DAILY'};UNTIL=${d(end)}T235959`,
+      `SUMMARY:🎯 90:90:1 — ${m.title}`,
+      `DESCRIPTION:${m.minutes || 90} minutes on the one thing. Phone away.`,
+      'BEGIN:VALARM',
+      'ACTION:DISPLAY',
+      'DESCRIPTION:90:90:1 block',
+      'TRIGGER:-PT5M',
+      'END:VALARM',
+      'END:VEVENT',
+    ];
   }
 
   /** Build an .ics with a daily event + alarm for the rest of the challenge. */
@@ -109,6 +140,7 @@
       'TRIGGER:PT0M',
       'END:VALARM',
       'END:VEVENT',
+      ...focusEvent(s, d, stamp),
       'END:VCALENDAR',
     ];
     return lines.join('\r\n');

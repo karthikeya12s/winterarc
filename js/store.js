@@ -3,7 +3,7 @@
 (function (root) {
   const WA = (root.WA = root.WA || {});
   const KEY = 'winterarc.v1';
-  WA.VERSION = '2026.10.14';
+  WA.VERSION = '2026.10.18';
 
   // ---------- dates (always local calendar days, 'YYYY-MM-DD') ----------
   const pad = (n) => String(n).padStart(2, '0');
@@ -59,6 +59,7 @@
       workouts: [], // {id,date,type,duration,rpe,calories,distance,notes,source, exercises:[{name,sets,reps,weight}]}
       health: {}, // date -> { steps, activeEnergy, exerciseMin, restingHR, hrv, sleepHrs, weight, distanceKm, calories, protein }
       healthMeta: { lastImport: null, source: null, records: 0 },
+      focus: { mission: null, tasks: [], sessions: {} }, // 90:90:1 (see focus.js)
       plans: {}, // weekStart -> { focus: habitId, days: ['Mon','Wed'], types: {Mon:'Strength'}, note }
       reviews: {}, // weekStart -> { worked, change, done: true }
       settings: { reminderTime: '07:00', notify: false, lastDuration: {}, goals: { calories: null, protein: null, goalWeight: null } },
@@ -89,6 +90,7 @@
       challenge: { ...d.challenge, ...(s.challenge || {}) },
       settings: { ...d.settings, ...(s.settings || {}), goals: { ...d.settings.goals, ...((s.settings || {}).goals || {}) }, lastDuration: { ...((s.settings || {}).lastDuration || {}) } },
       plans: s.plans || {},
+      focus: s.focus || { mission: null, tasks: [], sessions: {} },
       reviews: s.reviews || {},
       healthMeta: { ...d.healthMeta, ...(s.healthMeta || {}) },
     };
@@ -136,6 +138,7 @@
       if (v === true) return true;
       if (v === false) return false;
       if (h.auto === 'workout') return workoutsOn(s, date).length > 0;
+      if (h.auto === 'focus') return !!(root.WA.focus && root.WA.focus.doneOn(s, date));
       return false;
     }
     const val = habitValue(s, h, date);
