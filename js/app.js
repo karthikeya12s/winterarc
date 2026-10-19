@@ -1191,7 +1191,7 @@
 
   // ---------------- 90:90:1 ----------------
   let focusTick = null;
-  let focusPick = new Set(); // tasks selected for the next session
+  let focusPick = new Set(); // reserved (no task tagging)
   const fmtClock = (ms) => {
     const sec = Math.max(0, Math.floor(ms / 1000));
     return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
@@ -1216,7 +1216,6 @@
     tick();
     focusTick = setInterval(tick, 1000);
   }
-  const taskChip = (x, sel) => `<button type="button" class="chip task-chip ${sel ? 'on' : ''}" data-pick="${x.id}">${esc(x.title)}<small>${x.progress || 0}%</small></button>`;
 
   /** The daily block card shown on Today. */
   function focusCard(s, day) {
@@ -1229,7 +1228,6 @@
     if (st.ended) return '';
     const sess = f.sessions[day] || { minutes: 0, taskIds: [] };
     const tm = day === t ? focus.timer() : null;
-    const open = f.tasks.filter((x) => (x.progress || 0) < 100);
     const required = focus.isRequired(m, day);
     const segs = focus.segments(m);
     const target = focus.targetMinutes(m);
@@ -1259,7 +1257,6 @@
       <div class="fbar"><span id="fbar" style="width:${pct}%"></span></div>
       <div class="focus-row">
         <div class="focus-num"><span class="stat-num">${total}<small>/${target} min</small></span><span class="stat-label">${done ? 'block done ✓' : required ? "today's block" : 'rest day · optional'}</span></div>
-        ${tm && tm.taskIds.length ? `<span class="muted small">Working on: ${tm.taskIds.map((id) => esc((f.tasks.find((x) => x.id === id) || {}).title || '')).filter(Boolean).join(', ')}</span>` : ''}
       </div>
       <ul class="fsegs">${segs.map(segRow).join('')}</ul>
       ${
@@ -1268,8 +1265,6 @@
           ${top.map((x, i) => `<label class="top3-row ${x.done ? 'done' : ''}"><input type="checkbox" data-top3done="${i}" ${x.done ? 'checked' : ''} ${x.text ? '' : 'disabled'}><span class="top3-n">${i + 1}</span><input type="text" data-top3="${i}" value="${esc(x.text || '')}" placeholder="${['The one thing that must happen today', 'Second priority', 'Third priority'][i]}" maxlength="120"></label>`).join('')}</div>`
           : ''
       }
-      ${open.length && !tm ? `<div class="chips">${open.slice(0, 6).map((x) => taskChip(x, focusPick.has(x.id))).join('')}</div><p class="muted small">Tap the mission task(s) this block moves, then start a segment.</p>` : ''}
-      ${sess.taskIds && sess.taskIds.length ? `<p class="muted small">Logged today: ${sess.taskIds.map((id) => esc((f.tasks.find((x) => x.id === id) || {}).title || '')).filter(Boolean).join(', ')}</p>` : ''}
     </section>`;
   }
   /** Top-3 edits (text / checkbox) from the focus card. Returns true if handled. */
@@ -1405,17 +1400,27 @@
 
     const st = focus.stats(s, t);
     const cal = focus.calendar(s, t);
-    const open = f.tasks.filter((x) => (x.progress || 0) < 100).sort((a, b) => (b.progress || 0) - (a.progress || 0));
-    const done = f.tasks.filter((x) => (x.progress || 0) >= 100).sort((a, b) => (a.doneAt < b.doneAt ? 1 : -1));
-    const sessions = [...new Set([...Object.keys(f.sessions), ...s.workouts.map((w) => w.date)])].filter((d) => d >= m.start && d <= focus.endDate(m) && d <= t && focus.minutesOn(s, d)).sort().reverse().slice(0, 14).map((d) => [d, f.sessions[d] || { minutes: 0, taskIds: [] }]);
-    const taskName = (id) => (f.tasks.find((x) => x.id === id) || {}).title || '';
-    const taskRow = (x) => `<li class="ftask ${x.progress >= 100 ? 'done' : ''}" data-task="${x.id}">
-        <button class="check ${x.progress >= 100 ? '' : ''}" data-tdone aria-label="Mark done">${WA.icon('check')}</button>
-        <div class="ftask-main"><span class="ftask-title">${esc(x.title)}</span>
-          <span class="bar-mini"><span style="width:${x.progress || 0}%"></span></span>
-          <span class="muted small">${x.progress >= 100 ? `Done ${D.fmt(x.doneAt)}` : `${x.progress || 0}%${x.updatedAt ? ` · updated ${D.fmt(x.updatedAt)}` : ''}`}</span></div>
-        ${x.progress >= 100 ? '' : `<span class="stepper small"><button class="step" data-tstep="-10" aria-label="Less">−</button><button class="step" data-tstep="10" aria-label="More">+</button></span>`}
-        <button class="icon-btn small" data-tdel aria-label="Delete task">✕</button></li>`;
+    const segs = focus.segments(m);
+    const end = focus.endDate(m);
+    const elapsed = D.range(m.start, t < end ? t : end).filter((d) => d < t && focus.isRequired(m, d)); // completed required days
+    const segStats = segs.map((g) => {
+      const hits = elapsed.filter((d) => focus.segmentMinutes(s, d, g) >= g.minutes).length;
+      const mins = D.range(m.start, t < end ? t : end).reduce((a, d) => a + focus.segmentMinutes(s, d, g), 0);
+      return { g, hits, rate: elapsed.length ? hits / elapsed.length : 0, hours: +(mins / 60).toFixed(1) };
+    });
+    // week-by-week blocks hit
+    const weeks = [];
+    for (let w = D.weekStart(m.start); w <= (t < end ? t : end); w = D.addDays(w, 7)) weeks.push(w);
+    const weekPts = weeks.map((w) => {
+      const days = D.range(w, D.addDays(w, 6)).filter((d) => d >= m.start && d <= end && d <= t && focus.isRequired(m, d));
+      const hit = days.filter((d) => focus.doneOn(s, d)).length;
+      return { label: D.fmt(w, { month: 'numeric', day: 'numeric' }), y: days.length ? hit : null, tip: `Week of ${D.fmt(w)}: ${hit}/${days.length} blocks` };
+    });
+    const top3Days = D.range(m.start, t < end ? t : end).filter((d) => d <= t && focus.top3(s, d).length);
+    const top3Done = top3Days.reduce((a, d) => a + focus.top3(s, d).filter((x) => x.done).length, 0);
+    const top3Total = top3Days.reduce((a, d) => a + focus.top3(s, d).length, 0);
+    const sessions = [...new Set([...Object.keys(f.sessions), ...s.workouts.map((w) => w.date)])].filter((d) => d >= m.start && d <= end && d <= t && focus.minutesOn(s, d)).sort().reverse().slice(0, 14);
+    const projected = elapsed.length ? Math.round(st.rate * st.totalRequired) : null;
 
     view.innerHTML = `
     <header class="page-head"><div><span class="eyebrow">90:90:1</span><h1>${esc(m.title)}</h1></div>
@@ -1431,7 +1436,7 @@
         <div class="hero-stats">
           <div class="stat"><span class="stat-num">${st.streak}</span><span class="stat-label">block streak · best ${st.best}</span></div>
           <div class="stat"><span class="stat-num">${st.hit}<small>/${st.requiredSoFar}</small></span><span class="stat-label">blocks hit</span></div>
-          <div class="stat"><span class="stat-num">${st.hours}<small>h</small></span><span class="stat-label">on the mission</span></div>
+          <div class="stat"><span class="stat-num">${st.hours}<small>h</small></span><span class="stat-label">on the goal</span></div>
         </div>
       </section>
       ${st.started && !st.ended ? focusCard(s, t) : ''}
@@ -1442,12 +1447,23 @@
       </section>
     </div>
 
-    <div class="col" data-tab="Tasks">
+    <div class="col" data-tab="Progress">
+      <section class="card">
+        <div class="card-head"><h2>Goal progress</h2><span class="muted small">day ${st.dayNo} of ${st.total}</span></div>
+        <div class="goal-bars">
+          <div class="goal-bar"><div class="goal-bar-head"><span>Time elapsed</span><b>${Math.round((st.dayNo / st.total) * 100)}%</b></div><span class="hbar"><span style="width:${(st.dayNo / st.total) * 100}%"></span></span></div>
+          <div class="goal-bar"><div class="goal-bar-head"><span>Blocks completed</span><b>${st.hit} / ${st.totalRequired}</b></div><span class="hbar"><span class="accent" style="width:${(st.hit / Math.max(1, st.totalRequired)) * 100}%"></span></span>
+            <span class="muted small">${projected != null ? `At this rate you'll finish with ${projected} of ${st.totalRequired} blocks.` : 'Hit today\'s block to start the count.'}</span></div>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Consistency by segment</h2>
+        <ul class="seg-stats">${segStats.map(({ g, hits, rate, hours }) => `<li><div class="goal-bar-head"><span>${esc(g.name)} <small>${g.minutes} min/day</small></span><b>${Math.round(rate * 100)}%</b></div><span class="hbar"><span class="${rate >= 0.8 ? 'good' : rate >= 0.5 ? 'accent' : 'warn'}" style="width:${rate * 100}%"></span></span><span class="muted small">${hits}/${elapsed.length} days · ${hours} h total</span></li>`).join('')}</ul>
+        ${m.top3 !== false ? `<div class="goal-bar top3-stat"><div class="goal-bar-head"><span>Top 3 things finished</span><b>${top3Total ? Math.round((top3Done / top3Total) * 100) + '%' : '—'}</b></div><span class="hbar"><span class="good" style="width:${top3Total ? (top3Done / top3Total) * 100 : 0}%"></span></span><span class="muted small">${top3Done}/${top3Total} items across ${top3Days.length} days</span></div>` : ''}
+      </section>
       <section class="card grow">
-        <div class="card-head"><h2>Tasks</h2><span class="muted small">${st.tasksDone}/${st.taskCount} done · ${st.taskProgress}% overall</span></div>
-        <form id="addtask" class="addtask"><input name="title" placeholder="Next task that moves the mission…" maxlength="100" required autocomplete="off"><button class="btn small">Add</button></form>
-        <ul class="ftasks">${open.map(taskRow).join('')}${open.length ? '' : '<li class="muted small">No open tasks. Add the next concrete step.</li>'}</ul>
-        ${done.length ? `<h3 class="week-head">Done</h3><ul class="ftasks">${done.map(taskRow).join('')}</ul>` : ''}
+        <h2>Blocks hit per week</h2>
+        ${charts.bar(weekPts, { label: 'Blocks hit per week', goal: m.schedule === 'weekdays' ? 5 : 7, empty: 'Your first week shows up here' })}
       </section>
     </div>
 
@@ -1456,8 +1472,8 @@
         <h2>Session log</h2>
         ${
           sessions.length
-            ? `<ul class="list">${sessions.map(([d, v]) => `<li class="row"><div class="row-date">${D.fmt(d, { weekday: 'short', day: 'numeric' })}</div><div class="row-main"><strong>${focus.minutesOn(s, d)} min</strong> ${focus.doneOn(s, d) ? '<span class="badge pr">hit</span>' : ''} <span class="muted small">${focus.segments(m).map((g) => `${esc(g.name)} ${focus.segmentMinutes(s, d, g)}`).join(' · ')}</span><div class="muted small">${(v.taskIds || []).map(taskName).filter(Boolean).map(esc).join(' · ') || '—'}</div>${v.note ? `<div class="muted small">${esc(v.note)}</div>` : ''}</div></li>`).join('')}</ul>`
-            : '<p class="muted">No blocks logged yet. Start the timer on Today.</p>'
+            ? `<ul class="list">${sessions.map((d) => `<li class="row"><div class="row-date">${D.fmt(d, { weekday: 'short', day: 'numeric' })}</div><div class="row-main"><strong>${focus.minutesOn(s, d)} min</strong> ${focus.doneOn(s, d) ? '<span class="badge pr">hit</span>' : ''}<div class="muted small">${segs.map((g) => `${esc(g.name)} ${focus.segmentMinutes(s, d, g)}`).join(' · ')}${focus.top3(s, d).length ? ` · top 3: ${focus.top3(s, d).filter((x) => x.done).length}/${focus.top3(s, d).length}` : ''}</div>${(f.sessions[d] || {}).note ? `<div class="muted small">${esc(f.sessions[d].note)}</div>` : ''}</div></li>`).join('')}</ul>`
+            : '<p class="muted">No blocks logged yet. Start a segment on Today.</p>'
         }
       </section>
     </div>
@@ -1466,33 +1482,12 @@
     startFocusTick();
 
     view.onchange = (e) => handleTop3Change(e, t, renderFocus);
-    $('#addtask').onsubmit = (e) => {
-      e.preventDefault();
-      const title = e.target.elements.title.value.trim();
-      if (!title) return;
-      store.update((st) => focus.get(st).tasks.push({ id: WA.uid(), title, progress: 0, createdAt: t }));
-      renderFocus();
-      $('#addtask input').focus();
-    };
     view.onclick = (e) => {
       if (handleFocusClick(e, t, renderFocus)) return;
       if (e.target.closest('#fshare')) {
-        const txt = `🎯 90:90:1 — ${m.title}\nDay ${st.dayNo}/${st.total} · ${st.hit}/${st.requiredSoFar} blocks hit · ${st.streak}-day streak · ${st.hours} h in\nTasks: ${st.tasksDone}/${st.taskCount} done (${st.taskProgress}%)`;
+        const txt = `🎯 90:90:1 — ${m.title}\nDay ${st.dayNo}/${st.total} · ${st.hit}/${st.requiredSoFar} blocks hit · ${st.streak}-day streak · ${st.hours} h in\n${segStats.map(({ g, rate }) => `${g.name} ${Math.round(rate * 100)}%`).join(' · ')}`;
         return shareText(`90:90:1 — ${m.title}`, txt);
       }
-      const row = e.target.closest('[data-task]');
-      if (!row) return;
-      const id = row.dataset.task;
-      const edit = (fn) => {
-        store.update((st) => {
-          const x = focus.get(st).tasks.find((y) => y.id === id);
-          x && fn(x);
-        });
-        renderFocus();
-      };
-      if (e.target.closest('[data-tstep]')) edit((x) => ((x.progress = Math.max(0, Math.min(100, (x.progress || 0) + +e.target.closest('[data-tstep]').dataset.tstep))), (x.updatedAt = t), x.progress >= 100 && (x.doneAt = x.doneAt || t)));
-      else if (e.target.closest('[data-tdone]')) edit((x) => (x.progress >= 100 ? ((x.progress = 90), (x.doneAt = null)) : ((x.progress = 100), (x.doneAt = t)), (x.updatedAt = t)));
-      else if (e.target.closest('[data-tdel]')) ask(`Delete "${taskName(id)}"?`, { ok: 'Delete', danger: true }).then((y) => y && (store.update((st) => (focus.get(st).tasks = focus.get(st).tasks.filter((x) => x.id !== id))), renderFocus()));
     };
   }
 

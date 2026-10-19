@@ -103,8 +103,6 @@
         if (fs.todayRequired && !top.length && new Date().getHours() >= 9) add('top3-empty', 'warn', 'Your top 3 for today are blank', 'Write them before anything else — that is what the 30-minute segment is for.');
         else if (top.length && top.every((x) => x.done)) add('top3-done', 'good', 'Top 3 done for today', `${top.length}/${top.length}. Anything else today is a bonus.`);
         if (fs.dayNo === 45) add('focus-half', 'info', 'Halfway through the 90 days', `${fs.hours} h on ${m.title} so far. Re-read your "why" on the 90:90:1 page.`);
-        const stale = WA.focus.get(s).tasks.filter((x) => x.progress > 0 && x.progress < 100 && x.updatedAt && WA.date.diffDays(x.updatedAt, t) >= 10);
-        if (stale.length) add('focus-task-stale', 'info', `"${stale[0].title}" hasn't moved in ${WA.date.diffDays(stale[0].updatedAt, t)} days`, 'Either break it into a smaller next step or drop it from the mission.');
       } else if (fs.ended) add('focus-complete', 'good', `90:90:1 complete: ${fs.hit}/${fs.totalRequired} blocks, ${fs.hours} h`, `${m.title}. Start the next 90 on the 90:90:1 page.`);
     }
 
